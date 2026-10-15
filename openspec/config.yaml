@@ -1,0 +1,29 @@
+schema: spec-driven
+
+context: |
+  t3-watch is a small always-on service that watches the systems a developer runs: CI, cloud
+  accounts, API-key vendors, URLs and scheduled jobs. It sets itself up from the projects and
+  logins already on the machine, runs deterministic checks on its own clock, serves a page for
+  knowing and deciding, and exposes an MCP server so a "Watch" thread in T3 Code (or any MCP
+  client) can investigate, author checks and show the page inline as an MCP App.
+
+  Stack: Node 24+, TypeScript (ESM), node:sqlite, node:http, @modelcontextprotocol/sdk and
+  @modelcontextprotocol/ext-apps. Web: React 19, Vite, Tailwind v4 and Fluid Functionalism
+  (Base UI flavor). Tests: vitest. One package, no monorepo.
+
+  Rules:
+  - Checks are deterministic code and cost no model tokens. Agents author checks; the service
+    runs them.
+  - Vendors are data: a JSON description per vendor in catalog/. Code is only for a new kind of
+    check or sign-in.
+  - Every vendor call is a read: GET only, to the vendor's declared API origin.
+  - Secret values never leave the service: not to the page, not to MCP results, not to logs.
+    Keys are pasted on the page, never in chat.
+  - The service binds to 127.0.0.1 by default and every HTTP route except heartbeats needs the
+    access token.
+  - No client or company names in this repository.
+
+rules:
+  tasks:
+    - Every task names the files it creates or changes.
+    - The last task group is verification with exact commands.
