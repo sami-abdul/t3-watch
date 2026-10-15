@@ -1,15 +1,23 @@
-import type { Watch } from "./app.ts";
-import { saveConfig, type WatchConfig } from "./config.ts";
-import { type Route, readJson, sendJson } from "./http.ts";
-import { WatchError } from "./app.ts";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 
-/** Routes and background work that build on the core service. */
+import { deliverAlerts } from "./alerts.ts";
+import { type Watch, WatchError } from "./app.ts";
+import { pageUrl, saveConfig, type WatchConfig } from "./config.ts";
+import { decideDraft } from "./drafts.ts";
+import { type Route, readJson, sendJson } from "./http.ts";
+import { makeMcpServer } from "./mcp.ts";
+
+/** Routes and background work that build on the core service: settings, drafts, MCP, alerts. */
 export const extendServer = (options: {
   readonly watch: Watch;
   readonly config: () => WatchConfig;
   readonly reloadConfig: () => WatchConfig;
   readonly home: string;
+  readonly root?: string;
 }) => {
+  const { watch } = options;
+  const page = () => pageUrl(options.config());
+
   const settings: Route = async (request, response, url) => {
     if (url.pathname !== "/api/settings") return false;
     if (request.method === "GET") {
@@ -27,10 +35,53 @@ export const extendServer = (options: {
     sendJson(response, 200, rest);
     return true;
   };
+
+  const drafts: Route = async (request, response, url) => {
+    const match = /^\/api\/drafts\/(check|vendor)\/([^/]+)\/(approve|discard)$/.exec(url.pathname);
+    if (match === null || request.method !== "POST") return false;
+    await decideDraft(watch, match[1] as "check" | "vendor", decodeURIComponent(match[2]!), match[3] as "approve" | "discard");
+    sendJson(response, 200, { ok: true });
+    return true;
+  };
+
+  // Stateless MCP: a fresh server per request, behind the same token as the API.
+  const mcp: Route = async (request, response, url) => {
+    if (url.pathname !== "/mcp") return false;
+    const server = makeMcpServer(watch, { root: options.root ?? process.cwd(), pageUrl: page });
+    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    response.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
+    await server.connect(transport);
+    await transport.handleRequest(request, response);
+    return true;
+  };
+
+  let timer: NodeJS.Timeout | null = null;
+  let sending = false;
+  const send = () => {
+    if (sending) return;
+    sending = true;
+    void deliverAlerts(watch, page())
+      .catch((error: unknown) => console.error("t3-watch could not send alerts", error))
+      .finally(() => {
+        sending = false;
+      });
+  };
+  let unsubscribe: (() => void) | null = null;
+
   return {
-    routes: [settings] as ReadonlyArray<Route>,
+    routes: [settings, drafts, mcp] as ReadonlyArray<Route>,
     publicRoutes: [] as ReadonlyArray<Route>,
-    start: () => {},
-    stop: () => {},
+    start: () => {
+      unsubscribe = watch.onEvent(send) as () => void;
+      // Retries what failed to send.
+      timer = setInterval(send, 60_000);
+    },
+    stop: () => {
+      unsubscribe?.();
+      if (timer !== null) clearInterval(timer);
+    },
   };
 };

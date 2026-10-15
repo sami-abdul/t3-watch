@@ -1,0 +1,79 @@
+# t3-watch
+
+Watch keeps an eye on the systems you run: CI, cloud accounts, API keys, URLs and scheduled jobs.
+It sets itself up from the projects and logins already on your machine, runs its checks on its
+own clock without spending model tokens, and wakes your agent only when something changes.
+
+- **The page** is for knowing and deciding: what's broken, what's waiting for you, and one-click
+  Turn on, Pause and Add key. Keys are pasted here, never in chat.
+- **The chat** is for understanding and authoring. A "Watch" thread in [T3 Code](https://t3.codes)
+  (or any MCP client) investigates failures, writes new checks and shows the page inline.
+
+## Install
+
+Watch needs Node 24 or newer, on a machine that stays on.
+
+```sh
+git clone https://github.com/sami-abdul/t3-watch && cd t3-watch
+pnpm install && pnpm build
+node bin/t3-watch.js install
+```
+
+`install` runs Watch in the background at login (systemd on Linux, launchd on macOS), adds its MCP
+server to Codex and Claude Code, and prints a sign-in link for the page. Open the link once in
+each browser you use. `t3-watch url` prints it again.
+
+On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
+page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8460 http://127.0.0.1:8460`)
+and set `publicUrl` in `~/.t3-watch/config.json` to that address.
+
+## First run
+
+Open the page and press **Set up Watch**. It reads the git repositories under `~/Projects` (and
+`~/code`, `~/src`, `~/dev` if they exist), finds the vendors your code uses, tests the `gh` login,
+each AWS CLI profile and any vendor keys in `.env` files, and runs every suggested check once.
+Untick what you don't want and press **Watch these**.
+
+Watch only reads. Keys it finds are stored encrypted in `~/.t3-watch`, and their values never
+reach the page, a log or an agent.
+
+## The Watch thread
+
+Make a thread in T3 Code, name it Watch, and say "Show me Watch". The agent calls `watch_home`.
+On Codex threads the page appears inline and its buttons work; on other providers you get the same
+state as text.
+
+Things to ask:
+
+- "What's broken?" or "Why did CI fail on api?"
+- "Pause the Stripe checks until Monday."
+- "Make sure the nightly import ran." The agent drafts a check, runs it once, and leaves it for you
+  to turn on.
+- "Watch Missive too." The agent writes a vendor description and tests it with your key.
+- "Set up alerts." The agent creates a T3 webhook task bound to the thread and gives Watch its
+  address. From then on, a check that starts or stops failing wakes the thread, and the agent
+  looks into it before you open it.
+
+## Vendors
+
+Each vendor is a JSON file in [`catalog/`](catalog): how to spot it in a project, which variable
+holds its key, how to send the key, which read-only call proves the key works, and which checks
+to offer. Adding a vendor is a file, not a release. Watch only sends GET requests to the API
+origin a description names.
+
+Shipped: Stripe, Pipedrive, Missive, Asana, Airtable, Jotform, Calendly, Vimeo, Sentry, OpenAI,
+Anthropic. Xero is recognised, but sign-in vendors aren't supported yet.
+
+Check kinds that need no vendor file: `http`, `github` (through `gh`), `aws_metric` (through the
+AWS CLI) and `heartbeat` (a job pings a URL; add `?status=fail` when it fails).
+
+## Development
+
+```sh
+pnpm dev          # the service from source, on 127.0.0.1:8460
+pnpm test         # unit and integration tests
+pnpm typecheck
+pnpm build        # server, page and the inline view
+```
+
+Design and requirements live in [`openspec/`](openspec).

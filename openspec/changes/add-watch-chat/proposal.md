@@ -22,9 +22,14 @@ host supports it, and wake only when something changed.
     secret).
 - **Inline view:** the same React components as the page, built into one HTML file served as the
   app resource. Its buttons call the tools; Add key opens the page.
+- **`t3-watch mcp`:** a stdio relay agents launch. It forwards to `/mcp` with the token from
+  Watch's own config, so agent configs never hold it.
 - **Alerts:** each change event is POSTed once to the alert URL as JSON with the check, outcome,
   summary and page link, signed with HMAC-SHA256 when a secret is set. All-green hours send
-  nothing. An optional daily digest posts the state once a day.
+  nothing. A morning digest is a T3 scheduled task that calls `watch_status`, so Watch keeps no
+  second scheduler for it.
+- **App-only tools** the inline view calls and the agent does not see: `watch_state`,
+  `watch_start_scan`, `watch_runs` and `watch_decide_draft`.
 - **Drafts on the page:** Home lists drafts with Turn on and Discard; approving a vendor draft
   adds it to the local catalog.
 

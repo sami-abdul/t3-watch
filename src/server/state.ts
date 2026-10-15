@@ -1,3 +1,4 @@
+import { alertSettings } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
 import type { Check } from "./store.ts";
@@ -34,6 +35,10 @@ export const readState = (watch: Watch) => {
     events: watch.store.events(20),
     notes: notes.filter((n) => n.checkId === null).slice(0, 10),
     vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft"),
+    alerts: (() => {
+      const a = alertSettings(watch);
+      return { url: a.url, signed: a.secret !== null };
+    })(),
     setup: { scan: watch.store.getKv<Scan | null>("scan", null), status: watch.scanner.status() },
     vendors: [...watch.vendors().values()].map((v) => ({
       id: v.id,
@@ -44,3 +49,28 @@ export const readState = (watch: Watch) => {
   };
 };
 export type WatchState = ReturnType<typeof readState>;
+
+/** Home as text, for hosts that cannot render the view and for agents. */
+export const homeText = (state: WatchState) => {
+  const on = state.checks.filter((c) => c.state === "on");
+  const failing = on.filter((c) => c.lastOutcome === "fail");
+  const unknown = on.filter((c) => c.lastOutcome === "unknown");
+  const drafts = state.checks.filter((c) => c.state === "draft");
+  const passing = on.filter((c) => c.lastOutcome === "pass").length;
+  const line = (c: CheckView) => `- ${c.serviceLabel}: ${c.intent} (${c.id}): ${c.lastSummary ?? "no result yet"}`;
+  const lines = [
+    on.length === 0
+      ? state.setup.scan === null
+        ? "Watch is not set up yet. Call watch_scan."
+        : "Nothing is watched yet. Review the scan with the person, then call watch_apply."
+      : failing.length === 0
+        ? `All clear: ${passing} of ${on.length} checks passing.`
+        : `${failing.length} broken, ${passing} passing, ${on.length} on.`,
+  ];
+  if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
+  if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));
+  if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
+  if (state.vendorDrafts.length > 0)
+    lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => String(d.description.label ?? d.id)).join(", ")}`);
+  return lines.join("\n");
+};

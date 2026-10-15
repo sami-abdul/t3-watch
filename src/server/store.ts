@@ -339,6 +339,16 @@ export const openStore = (file: string) => {
       );
       return toEvent(one("SELECT * FROM events WHERE id = ?", Number(info.lastInsertRowid))!);
     },
+    /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
+    setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>
+      exec(
+        "UPDATE checks SET last_outcome = ?, last_summary = ?, last_run_at = ? WHERE id = ?",
+        outcome,
+        summary,
+        at,
+        id,
+      ),
+    deleteVendorDraft: (id: string) => exec("DELETE FROM vendor_drafts WHERE id = ?", id),
     runs: (checkId: string, limit = 20) =>
       all("SELECT * FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT ?", checkId, limit).map(
         toRun,

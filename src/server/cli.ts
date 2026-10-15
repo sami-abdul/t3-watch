@@ -32,7 +32,13 @@ const start = async () => {
     deps: liveDeps,
     roots: () => config.roots,
   });
-  const extension = extendServer({ watch, config: () => config, reloadConfig: () => (config = loadConfig(home)), home });
+  const extension = extendServer({
+    watch,
+    config: () => config,
+    reloadConfig: () => (config = loadConfig(home)),
+    home,
+    root: packageRoot(),
+  });
   const server = makeHttpServer({
     watch,
     config: () => config,

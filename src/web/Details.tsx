@@ -148,6 +148,14 @@ export function Details({
         )}
       </Section>
 
+      <Section title="Alerts">
+        <Muted>
+          {state.alerts.url === null
+            ? "Off. Ask the Watch thread to set up alerts; it creates a T3 webhook task and hands Watch its address."
+            : `Changes go to ${state.alerts.url}${state.alerts.signed ? ", signed" : ""}.`}
+        </Muted>
+      </Section>
+
       <Section title="Recent changes">
         {state.events.length === 0 ? (
           <Muted>No check has changed state yet.</Muted>
