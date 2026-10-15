@@ -1,0 +1,55 @@
+{
+  "id": "pipedrive",
+  "label": "Pipedrive",
+  "detect": {
+    "npm": [
+      "pipedrive"
+    ],
+    "python": [
+      "pipedrive-python-lib",
+      "pipedrive"
+    ],
+    "envPrefix": "PIPEDRIVE_"
+  },
+  "key": {
+    "envNames": [
+      "PIPEDRIVE_API_TOKEN",
+      "PIPEDRIVE_TOKEN",
+      "PIPEDRIVE_API_KEY"
+    ],
+    "keyUrl": "https://app.pipedrive.com/settings/api",
+    "auth": {
+      "type": "header",
+      "name": "x-api-token"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.pipedrive.com"
+  },
+  "keyCheck": {
+    "path": "/api/v1/users/me",
+    "account": "data.company_id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Pipedrive key still works"
+    },
+    {
+      "type": "fresh",
+      "id": "deals-moving",
+      "intent": "Pipedrive deals were updated in the last two days",
+      "path": "/api/v2/deals",
+      "query": {
+        "sort_by": "update_time",
+        "sort_direction": "desc",
+        "limit": "1"
+      },
+      "items": "data",
+      "time": "update_time",
+      "maxAgeSeconds": 172800
+    }
+  ]
+}

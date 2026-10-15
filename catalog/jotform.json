@@ -1,0 +1,39 @@
+{
+  "id": "jotform",
+  "label": "Jotform",
+  "detect": {
+    "npm": [
+      "jotform"
+    ],
+    "python": [
+      "jotform"
+    ],
+    "envPrefix": "JOTFORM_"
+  },
+  "key": {
+    "envNames": [
+      "JOTFORM_API_KEY",
+      "JOTFORM_KEY"
+    ],
+    "keyUrl": "https://www.jotform.com/myaccount/api",
+    "auth": {
+      "type": "header",
+      "name": "APIKEY"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.jotform.com"
+  },
+  "keyCheck": {
+    "path": "/user",
+    "account": "content.username"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Jotform key still works"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "id": "stripe",
+  "label": "Stripe",
+  "detect": {
+    "npm": [
+      "stripe"
+    ],
+    "python": [
+      "stripe"
+    ],
+    "envPrefix": "STRIPE_"
+  },
+  "key": {
+    "envNames": [
+      "STRIPE_RESTRICTED_KEY",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_LIVE_SECRET_KEY",
+      "STRIPE_API_KEY",
+      "STRIPE_KEY"
+    ],
+    "keyUrl": "https://dashboard.stripe.com/apikeys",
+    "auth": {
+      "type": "bearer"
+    },
+    "canWrite": "^sk_(live|test)_"
+  },
+  "api": {
+    "origin": "https://api.stripe.com"
+  },
+  "keyCheck": {
+    "path": "/v1/account",
+    "account": "id",
+    "fallbacks": [
+      "/v1/events"
+    ]
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Stripe key still works"
+    },
+    {
+      "type": "fresh",
+      "id": "activity",
+      "intent": "Stripe recorded activity in the last two days",
+      "path": "/v1/events",
+      "query": {
+        "limit": "1"
+      },
+      "items": "data",
+      "time": "created",
+      "maxAgeSeconds": 172800,
+      "optional": true
+    }
+  ]
+}

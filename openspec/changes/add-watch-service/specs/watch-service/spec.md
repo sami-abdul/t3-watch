@@ -4,8 +4,9 @@
 
 The service SHALL run checks of kind `http`, `github`, `aws_metric`, `heartbeat` and `vendor`.
 Each run SHALL produce an outcome of pass, fail or unknown, a one-line summary and evidence.
-A check that cannot reach its target or cannot read the reply SHALL be unknown, not fail, unless
-the reply proves a failure (for example a 401 from a vendor).
+An `http` check that gets no answer SHALL fail, because the site it watches is down. Any other
+check that cannot reach its target or read the reply SHALL be unknown, not fail, unless the reply
+proves a failure (for example a 401 from a vendor).
 
 #### Scenario: HTTP check against a down URL
 

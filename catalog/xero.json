@@ -1,0 +1,14 @@
+{
+  "id": "xero",
+  "label": "Xero",
+  "detect": {
+    "npm": [
+      "xero-node"
+    ],
+    "python": [
+      "xero-python"
+    ],
+    "envPrefix": "XERO_"
+  },
+  "signIn": "oauth"
+}

@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.t3-watch/
+*.log

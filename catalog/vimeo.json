@@ -1,0 +1,41 @@
+{
+  "id": "vimeo",
+  "label": "Vimeo",
+  "detect": {
+    "npm": [
+      "@vimeo/vimeo",
+      "vimeo"
+    ],
+    "python": [
+      "pyvimeo"
+    ],
+    "envPrefix": "VIMEO_"
+  },
+  "key": {
+    "envNames": [
+      "VIMEO_ACCESS_TOKEN",
+      "VIMEO_TOKEN"
+    ],
+    "keyUrl": "https://developer.vimeo.com/apps",
+    "auth": {
+      "type": "bearer"
+    }
+  },
+  "api": {
+    "origin": "https://api.vimeo.com"
+  },
+  "keyCheck": {
+    "path": "/me",
+    "query": {
+      "fields": "uri"
+    },
+    "account": "uri"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Vimeo key still works"
+    }
+  ]
+}

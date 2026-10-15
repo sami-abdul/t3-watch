@@ -1,0 +1,33 @@
+{
+  "id": "missive",
+  "label": "Missive",
+  "detect": {
+    "envPrefix": "MISSIVE_"
+  },
+  "key": {
+    "envNames": [
+      "MISSIVE_API_TOKEN",
+      "MISSIVE_TOKEN",
+      "MISSIVE_API_KEY"
+    ],
+    "keyUrl": "https://missiveapp.com/help/api-documentation/getting-started",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://public.missiveapp.com"
+  },
+  "keyCheck": {
+    "path": "/v1/organizations",
+    "account": "organizations.0.id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Missive key still works"
+    }
+  ]
+}

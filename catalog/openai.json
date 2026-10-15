@@ -1,0 +1,35 @@
+{
+  "id": "openai",
+  "label": "OpenAI",
+  "detect": {
+    "npm": [
+      "openai"
+    ],
+    "python": [
+      "openai"
+    ],
+    "envPrefix": "OPENAI_"
+  },
+  "key": {
+    "envNames": [
+      "OPENAI_API_KEY"
+    ],
+    "keyUrl": "https://platform.openai.com/api-keys",
+    "auth": {
+      "type": "bearer"
+    }
+  },
+  "api": {
+    "origin": "https://api.openai.com"
+  },
+  "keyCheck": {
+    "path": "/v1/models"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The OpenAI key still works"
+    }
+  ]
+}

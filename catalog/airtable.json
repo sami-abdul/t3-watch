@@ -1,0 +1,41 @@
+{
+  "id": "airtable",
+  "label": "Airtable",
+  "detect": {
+    "npm": [
+      "airtable"
+    ],
+    "python": [
+      "pyairtable",
+      "airtable-python-wrapper"
+    ],
+    "envPrefix": "AIRTABLE_"
+  },
+  "key": {
+    "envNames": [
+      "AIRTABLE_TOKEN",
+      "AIRTABLE_PAT",
+      "AIRTABLE_ACCESS_TOKEN",
+      "AIRTABLE_API_KEY"
+    ],
+    "keyUrl": "https://airtable.com/create/tokens",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.airtable.com"
+  },
+  "keyCheck": {
+    "path": "/v0/meta/whoami",
+    "account": "id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Airtable key still works"
+    }
+  ]
+}

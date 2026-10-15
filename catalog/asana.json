@@ -1,0 +1,39 @@
+{
+  "id": "asana",
+  "label": "Asana",
+  "detect": {
+    "npm": [
+      "asana"
+    ],
+    "python": [
+      "asana"
+    ],
+    "envPrefix": "ASANA_"
+  },
+  "key": {
+    "envNames": [
+      "ASANA_ACCESS_TOKEN",
+      "ASANA_TOKEN",
+      "ASANA_PAT"
+    ],
+    "keyUrl": "https://app.asana.com/0/my-apps",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://app.asana.com"
+  },
+  "keyCheck": {
+    "path": "/api/1.0/users/me",
+    "account": "data.gid"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Asana key still works"
+    }
+  ]
+}

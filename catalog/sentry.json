@@ -1,0 +1,36 @@
+{
+  "id": "sentry",
+  "label": "Sentry",
+  "detect": {
+    "npm": [
+      "@sentry/*"
+    ],
+    "python": [
+      "sentry-sdk"
+    ],
+    "envPrefix": "SENTRY_"
+  },
+  "key": {
+    "envNames": [
+      "SENTRY_AUTH_TOKEN"
+    ],
+    "keyUrl": "https://sentry.io/settings/account/api/auth-tokens/",
+    "auth": {
+      "type": "bearer"
+    }
+  },
+  "api": {
+    "origin": "https://sentry.io"
+  },
+  "keyCheck": {
+    "path": "/api/0/organizations/",
+    "account": "0.slug"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Sentry token still works"
+    }
+  ]
+}

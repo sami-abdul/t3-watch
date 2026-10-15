@@ -1,0 +1,71 @@
+import { z } from "zod";
+
+import { type CheckRunner, unknown } from "./types.ts";
+
+const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
+const argument = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_./ -]{0,199}$/);
+export const GitHubConfig = z.object({
+  repo: repoName,
+  branch: argument.optional(),
+  workflow: argument.optional(),
+});
+
+interface RunRow {
+  readonly status: string;
+  readonly conclusion: string;
+  readonly workflowName: string;
+  readonly displayTitle: string;
+  readonly url: string;
+  readonly createdAt: string;
+}
+const FAILED = new Set(["failure", "timed_out", "startup_failure", "action_required"]);
+const IGNORED = new Set(["cancelled", "skipped", "neutral", "stale", ""]);
+
+/** Fails when the latest finished run of any workflow on the branch failed. */
+export const runGitHub: CheckRunner = async (check, { deps }) => {
+  const parsed = GitHubConfig.safeParse(check.config);
+  if (!parsed.success) return unknown("The check's settings are invalid");
+  const c = parsed.data;
+  const result = await deps.run("gh", [
+    "run",
+    "list",
+    "--repo",
+    c.repo,
+    ...(c.branch === undefined ? [] : ["--branch", c.branch]),
+    ...(c.workflow === undefined ? [] : ["--workflow", c.workflow]),
+    "--limit",
+    "30",
+    "--json",
+    "status,conclusion,workflowName,displayTitle,url,createdAt",
+  ]);
+  if (result.missing) return unknown("Install the GitHub CLI (gh) on this machine");
+  if (result.code !== 0)
+    return /auth|login|401/i.test(result.stderr)
+      ? unknown("The GitHub CLI is not logged in. Run gh auth login")
+      : unknown(`gh could not read runs: ${result.stderr.trim().slice(0, 160)}`);
+  let runs: Array<RunRow>;
+  try {
+    runs = JSON.parse(result.stdout) as Array<RunRow>;
+  } catch {
+    return unknown("gh returned unreadable output");
+  }
+  const latest = new Map<string, RunRow>();
+  for (const run of runs) {
+    if (run.status !== "completed" || IGNORED.has(run.conclusion ?? "")) continue;
+    if (!latest.has(run.workflowName)) latest.set(run.workflowName, run);
+  }
+  if (latest.size === 0) return unknown("No finished runs yet");
+  const failed = [...latest.values()].filter((run) => FAILED.has(run.conclusion));
+  const where = c.branch === undefined ? c.repo : `${c.branch} in ${c.repo}`;
+  if (failed.length > 0)
+    return {
+      outcome: "fail",
+      summary: `${failed.map((r) => r.workflowName).join(", ")} failed on ${where}`,
+      evidence: { runs: failed.map((r) => ({ workflow: r.workflowName, title: r.displayTitle, url: r.url, at: r.createdAt })) },
+    };
+  return {
+    outcome: "pass",
+    summary: `${latest.size} workflow${latest.size === 1 ? "" : "s"} passing on ${where}`,
+    evidence: { workflows: [...latest.keys()] },
+  };
+};

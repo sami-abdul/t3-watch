@@ -1,0 +1,39 @@
+{
+  "id": "anthropic",
+  "label": "Anthropic",
+  "detect": {
+    "npm": [
+      "@anthropic-ai/sdk"
+    ],
+    "python": [
+      "anthropic"
+    ],
+    "envPrefix": "ANTHROPIC_"
+  },
+  "key": {
+    "envNames": [
+      "ANTHROPIC_API_KEY"
+    ],
+    "keyUrl": "https://console.anthropic.com/settings/keys",
+    "auth": {
+      "type": "header",
+      "name": "x-api-key"
+    },
+    "headers": {
+      "anthropic-version": "2023-06-01"
+    }
+  },
+  "api": {
+    "origin": "https://api.anthropic.com"
+  },
+  "keyCheck": {
+    "path": "/v1/models"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Anthropic key still works"
+    }
+  ]
+}

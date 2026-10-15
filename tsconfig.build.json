@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": true,
+    "outDir": "dist/server",
+    "rootDir": "src/server",
+    "lib": ["es2024"]
+  },
+  "include": ["src/server"],
+  "exclude": ["src/server/**/*.test.ts"]
+}

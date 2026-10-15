@@ -1,0 +1,34 @@
+{
+  "id": "calendly",
+  "label": "Calendly",
+  "detect": {
+    "envPrefix": "CALENDLY_"
+  },
+  "key": {
+    "envNames": [
+      "CALENDLY_TOKEN",
+      "CALENDLY_PAT",
+      "CALENDLY_ACCESS_TOKEN",
+      "CALENDLY_API_KEY"
+    ],
+    "keyUrl": "https://calendly.com/integrations/api_webhooks",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.calendly.com"
+  },
+  "keyCheck": {
+    "path": "/users/me",
+    "account": "resource.slug"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Calendly key still works"
+    }
+  ]
+}
