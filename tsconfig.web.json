@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": [
+      "vite/client"
+    ],
+    "paths": {
+      "~/*": [
+        "./src/web/*"
+      ]
+    }
+  },
+  "include": [
+    "src/web",
+    "vite.config.ts"
+  ]
+}

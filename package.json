@@ -4,21 +4,34 @@
   "description": "Watches the systems you run, sets itself up from your projects, and talks to your agents over MCP.",
   "license": "MIT",
   "type": "module",
-  "bin": { "t3-watch": "bin/t3-watch.js" },
-  "files": ["bin", "dist", "catalog", "README.md", "LICENSE"],
-  "engines": { "node": ">=24" },
+  "bin": {
+    "t3-watch": "bin/t3-watch.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "catalog",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "node src/server/cli.ts start",
     "build": "pnpm build:server && pnpm build:web && pnpm build:app",
     "build:server": "tsc -p tsconfig.build.json",
     "build:web": "vite build",
     "build:app": "vite build --mode app",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/core": "2.3.1",
     "@modelcontextprotocol/ext-apps": "2.0.3",
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
