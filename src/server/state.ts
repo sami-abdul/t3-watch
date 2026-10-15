@@ -1,4 +1,5 @@
 import type { Watch } from "./app.ts";
+import type { Scan } from "./scan.ts";
 import type { Check } from "./store.ts";
 
 export interface CheckView extends Check {
@@ -33,6 +34,7 @@ export const readState = (watch: Watch) => {
     events: watch.store.events(20),
     notes: notes.filter((n) => n.checkId === null).slice(0, 10),
     vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft"),
+    setup: { scan: watch.store.getKv<Scan | null>("scan", null), status: watch.scanner.status() },
     vendors: [...watch.vendors().values()].map((v) => ({
       id: v.id,
       label: v.label,

@@ -26,7 +26,12 @@ export const packageRoot = () => {
 const start = async () => {
   const home = watchHome();
   let config = loadConfig(home);
-  const watch = makeWatch({ home, dbFile: join(home, "watch.sqlite"), deps: liveDeps });
+  const watch = makeWatch({
+    home,
+    dbFile: join(home, "watch.sqlite"),
+    deps: liveDeps,
+    roots: () => config.roots,
+  });
   const extension = extendServer({ watch, config: () => config, reloadConfig: () => (config = loadConfig(home)), home });
   const server = makeHttpServer({
     watch,

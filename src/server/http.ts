@@ -142,6 +142,19 @@ export const makeHttpServer = (options: {
       sendJson(response, 200, result);
       return true;
     }
+    if (path === "/api/scan" && method === "POST") {
+      // The scan takes a while; the page follows its step through /api/state.
+      void watch.scanner.start().catch(() => {});
+      sendJson(response, 202, { status: watch.scanner.status() });
+      return true;
+    }
+    if (path === "/api/apply" && method === "POST") {
+      const body = await readJson(request);
+      const list = (value: unknown) =>
+        Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+      sendJson(response, 200, await watch.applyScan({ turnOn: list(body.turnOn), removeKeys: list(body.removeKeys) }));
+      return true;
+    }
     const removeKey = /^\/api\/keys\/([^/]+)$/.exec(path);
     if (removeKey !== null && method === "DELETE") {
       watch.removeKey(decodeURIComponent(removeKey[1]!));

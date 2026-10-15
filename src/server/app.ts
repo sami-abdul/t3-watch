@@ -8,6 +8,7 @@ import type { CheckContext } from "./checks/index.ts";
 import { openKeyring } from "./keys.ts";
 import type { Deps } from "./proc.ts";
 import { makeRunner } from "./runner.ts";
+import { applyScan, makeScanner } from "./scan.ts";
 import { type ChangeEvent, type Check, type KeyRecord, openStore, type Service, type Store } from "./store.ts";
 import { loadCatalog, runKeyCheck, type Vendor } from "./vendors.ts";
 
@@ -23,12 +24,16 @@ export type CheckAction = "on" | "pause" | "resume" | "snooze" | "run";
 
 export interface PublicKey extends Omit<KeyRecord, "removedAt"> {}
 
-export const makeWatch = (options: {
+interface WatchOptions {
   readonly home: string | null;
   readonly dbFile: string;
   readonly deps: Deps;
   readonly catalogDir?: string;
-}) => {
+  /** Folders whose repositories setup scans. */
+  readonly roots?: () => ReadonlyArray<string>;
+}
+
+const makeCore = (options: WatchOptions) => {
   const store: Store = openStore(options.dbFile);
   const keyring = openKeyring(options.home, store);
   const now = () => options.deps.now().toISOString();
@@ -160,6 +165,19 @@ export const makeWatch = (options: {
       runner.stop();
       store.close();
     },
+  };
+};
+/** The service without setup, which setup itself builds on. */
+export type WatchCore = ReturnType<typeof makeCore>;
+
+export const makeWatch = (options: WatchOptions) => {
+  const core = makeCore(options);
+  const scanner = makeScanner(core, options.roots ?? (() => []));
+  return {
+    ...core,
+    scanner,
+    applyScan: (input: { turnOn: ReadonlyArray<string>; removeKeys: ReadonlyArray<string> }) =>
+      applyScan(core, input),
   };
 };
 export type Watch = ReturnType<typeof makeWatch>;

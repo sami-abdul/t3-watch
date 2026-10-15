@@ -8,5 +8,5 @@
     "lib": ["es2024"]
   },
   "include": ["src/server"],
-  "exclude": ["src/server/**/*.test.ts"]
+  "exclude": ["src/server/**/*.test.ts", "src/server/testkit.ts"]
 }
