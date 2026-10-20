@@ -30,7 +30,8 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
     : {};
   const config: WatchConfig = {
     port: Number(process.env.T3_WATCH_PORT ?? stored.port ?? 8460),
-    host: process.env.T3_WATCH_HOST ?? stored.host ?? "127.0.0.1",
+    // listen() wants a bare IPv6 address, not the bracketed form URLs use.
+    host: (process.env.T3_WATCH_HOST ?? stored.host ?? "127.0.0.1").replace(/^\[(.*)\]$/, "$1"),
     token: stored.token ?? randomBytes(24).toString("base64url"),
     roots: stored.roots ?? defaultRoots(),
     publicUrl: stored.publicUrl ?? null,
