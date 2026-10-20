@@ -5,12 +5,11 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 
-import { loadConfig } from "./config.ts";
+import { loadConfig, localUrl } from "./config.ts";
 
 export const relay = async () => {
   const config = loadConfig();
-  const host = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
-  const upstream = new StreamableHTTPClientTransport(new URL(`http://${host}:${config.port}/mcp`), {
+  const upstream = new StreamableHTTPClientTransport(new URL("/mcp", localUrl(config)), {
     requestInit: { headers: { authorization: `Bearer ${config.token}` } },
   });
   const local = new StdioServerTransport();

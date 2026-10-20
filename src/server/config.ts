@@ -45,8 +45,13 @@ export const saveConfig = (config: WatchConfig, home = watchHome()) => {
   });
 };
 
-export const pageUrl = (config: WatchConfig) =>
-  config.publicUrl ?? `http://${config.host === "0.0.0.0" ? "127.0.0.1" : config.host}:${config.port}`;
+/** Where tools on this machine reach the service: its own address, or loopback when it listens everywhere. */
+export const localUrl = (config: WatchConfig) => {
+  const host = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
+  return `http://${host.includes(":") ? `[${host}]` : host}:${config.port}`;
+};
+
+export const pageUrl = (config: WatchConfig) => config.publicUrl ?? localUrl(config);
 
 export const signInUrl = (config: WatchConfig) =>
   `${pageUrl(config)}/signin?token=${encodeURIComponent(config.token)}`;

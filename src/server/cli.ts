@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeWatch } from "./app.ts";
-import { loadConfig, pageUrl, signInUrl, watchHome } from "./config.ts";
+import { loadConfig, localUrl, pageUrl, signInUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
 import { extendServer } from "./extend.ts";
@@ -171,7 +171,7 @@ const uninstall = async () => {
 const status = async () => {
   const config = loadConfig();
   try {
-    const response = await fetch(`http://127.0.0.1:${config.port}/api/state`, {
+    const response = await fetch(`${localUrl(config)}/api/state`, {
       headers: { authorization: `Bearer ${config.token}` },
       signal: AbortSignal.timeout(3000),
     });
