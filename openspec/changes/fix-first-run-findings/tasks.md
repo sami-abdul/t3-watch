@@ -43,6 +43,15 @@
       IPv6 host.
 - [x] 5.7 `src/web/Details.tsx`: the folder list shows a load error instead of falling back.
 - [x] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.
+- [ ] 5.9 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with `maxAgeSeconds`, finished
+      runs that were all skipped or cancelled fail as stale.
+- [ ] 5.10 `src/server/config.ts`, `src/server/config.test.ts`: `loadConfig` strips IPv6 brackets
+      so `listen` gets a plain address.
+- [ ] 5.11 `src/server/cli.ts`: the install hint names the node binary install used, quoted.
+- [ ] 5.12 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the page check
+      accepts a forwarding proxy's host, and its comment states what it does not stop.
+- [ ] 5.13 `src/web/Details.tsx`: the folder list retries on each refresh until it loads.
+- [ ] 5.14 `src/web/Details.tsx`: the replace prompt clears when alerts turn off.
 
 ## 6. Verification
 
