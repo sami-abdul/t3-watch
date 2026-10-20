@@ -66,6 +66,19 @@ const start = async () => {
 
 const binCommand = () => [process.execPath, join(packageRoot(), "bin", "t3-watch.js")];
 
+/** A word a POSIX shell reads back unchanged, for commands printed to copy. */
+export const shellQuote = (word: string) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`);
+
+/**
+ * A systemd unit value in double quotes. Specifiers (%) are always expanded; ExecStart also
+ * expands $VARIABLES, so its words double the dollar signs too.
+ */
+export const systemdQuote = (value: string, execLine: boolean) => {
+  let escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%");
+  if (execLine) escaped = escaped.replace(/\$/g, "$$$$");
+  return `"${escaped}"`;
+};
+
 const registerMcp = async () => {
   const [node, bin] = binCommand();
   const lines: Array<string> = [];
@@ -81,7 +94,7 @@ const registerMcp = async () => {
     const result = await runProc(cli, add);
     lines.push(
       result.missing
-        ? `${cli}: not installed. Later run: ${cli} mcp add ${cli === "claude" ? "-s user " : ""}${SERVICE} -- ${node} ${bin} mcp`
+        ? `${cli}: not installed. Later run: ${cli} mcp add ${cli === "claude" ? "-s user " : ""}${SERVICE} -- ${shellQuote(node!)} ${shellQuote(bin!)} mcp`
         : result.code === 0
           ? `${cli}: added the ${SERVICE} MCP server`
           : `${cli}: could not add the MCP server: ${result.stderr.trim().slice(0, 200)}`,
@@ -132,8 +145,8 @@ Description=t3-watch
 After=network-online.target
 
 [Service]
-ExecStart=${node} ${bin} start
-${env.map((e) => `Environment="${e}"`).join("\n")}
+ExecStart=${systemdQuote(node!, true)} ${systemdQuote(bin!, true)} start
+${env.map((e) => `Environment=${systemdQuote(e, false)}`).join("\n")}
 Restart=on-failure
 RestartSec=5
 
@@ -149,8 +162,7 @@ WantedBy=default.target
   for (const line of await registerMcp()) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // Agents run install, and some agent shells are terminals, so install never prints the token.
-  const quote = (path: string) => (/\s/.test(path) ? `"${path}"` : path);
-  console.log(`To sign in, run this in your own terminal and open the link once in each browser: ${quote(node!)} ${quote(bin!)} url`);
+  console.log(`To sign in, run this in your own terminal and open the link once in each browser: ${shellQuote(node!)} ${shellQuote(bin!)} url`);
   if (platform() === "linux")
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
 };

@@ -58,7 +58,8 @@
 - [x] 5.17 `src/server/http.ts`, `src/server/chat.test.ts`: drop the X-Forwarded-Host trust;
       `publicUrl` names a proxy's origin.
 - [x] 5.18 `src/web/Details.tsx`: a late folder-list reply cannot overwrite a newer one.
-- [ ] 5.19 `src/server/cli.ts`: the systemd unit and the printed commands quote their paths.
+- [x] 5.19 `src/server/cli.ts`, `src/server/cli.test.ts`: the systemd unit and the printed commands
+      quote their paths.
 - [ ] 5.20 `src/server/config.ts`: one helper strips IPv6 brackets.
 
 ## 6. Verification
