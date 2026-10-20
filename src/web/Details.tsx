@@ -61,9 +61,17 @@ export function Details({
   // Replacing a secret while alerts are on stops them until the T3 task has the new one.
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [rootsError, setRootsError] = useState<string | null>(null);
+  // Tries again on every refresh until the folder list loads.
   useEffect(() => {
-    client.roots?.().then(setConfigured, (e: unknown) => setRootsError(e instanceof Error ? e.message : String(e)));
-  }, [client]);
+    if (configured !== null) return;
+    client.roots?.().then(
+      (list) => {
+        setConfigured(list);
+        setRootsError(null);
+      },
+      (e: unknown) => setRootsError(e instanceof Error ? e.message : String(e)),
+    );
+  }, [client, configured, state.generatedAt]);
   const act = async (work: () => Promise<unknown>) => {
     setError(null);
     try {
