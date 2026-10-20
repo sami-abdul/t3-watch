@@ -62,9 +62,12 @@ A check whose last result was a pass, or that has no result yet, SHALL NOT chang
 that does not pass. Watch SHALL keep that run in the check's history marked as pending and SHALL
 run the check again within 60 seconds, or within its cadence when that is shorter. Only when that
 next run does not pass either SHALL the check take its result, with a change event and an alert.
-Held runs SHALL NOT count either way. A pending run SHALL count only for a run that follows it
-within twice the check's cadence or 2 minutes, whichever is longer. A pass, and a change between
-failing and not being able to run, SHALL count at once.
+Held runs SHALL NOT count either way. The next run that is not held SHALL confirm or clear a
+pending run whenever it comes, and pausing, resuming, snoozing or redefining the check SHALL
+clear it. A run someone asks for SHALL record its result as it is. A pending failure confirmed by
+a run that could not run SHALL still make an event. A pass, and a change between failing and not
+being able to run, SHALL count at once. The history, the text status and Home SHALL show a
+pending check as failed once and being checked again.
 
 #### Scenario: One bad run
 
@@ -75,6 +78,11 @@ failing and not being able to run, SHALL count at once.
 
 - **WHEN** a passing check fails, and fails again a minute later
 - **THEN** it fails after the second run and one event is made
+
+#### Scenario: A run someone asks for
+
+- **WHEN** a person or agent runs a passing check now and it fails
+- **THEN** it fails at once and an event is made
 
 #### Scenario: Recovery
 

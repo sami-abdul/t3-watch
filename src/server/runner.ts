@@ -5,15 +5,14 @@ import { type ChangeEvent, type Check, changesState } from "./store.ts";
 const CONCURRENCY = 4;
 /** A failure after a pass is confirmed by a second run this soon, or at the check's cadence if shorter. */
 const CONFIRM_SECONDS = 60;
-/** A pending failure counts for a confirming run within twice the cadence, or at least this long. */
-const CONFIRM_WINDOW_SECONDS = 120;
 
 /** Runs due checks on a clock. Each check runs at most once at a time. */
 export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) => void, link: Connectivity) => {
   const running = new Set<string>();
   let timer: NodeJS.Timeout | null = null;
 
-  const runAndRecord = async (check: Check) => {
+  /** `manual` is a run someone asked for, which records its result as it is. */
+  const runAndRecord = async (check: Check, manual = false) => {
     if (running.has(check.id)) return null;
     running.add(check.id);
     try {
@@ -34,22 +33,20 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         const offline = await link.hold();
         const capped = context.store.heldStreak(fresh.id) >= Math.ceil(MAX_HOLD_MS / 1000 / fresh.cadenceSeconds);
         if (offline && !capped) {
-          context.store.recordHeld(fresh, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
+          context.store.recordHeld(fresh.id, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
           return result;
         }
         // Past the cap the run is recorded, marked so the streak goes on while Watch stays offline.
         if (offline) recorded = { ...result, evidence: { ...result.evidence, heldTooLong: true } };
       }
       // One non-passing run from a check that was passing, or is new, is pending: kept in the
-      // history with no new state, and run again within a minute. Only a second in a row fails the
-      // check and alerts, so one dropped request on a lossy link does not.
-      if (recorded.outcome !== "pass" && (fresh.lastOutcome ?? "pass") === "pass") {
-        const window = Math.max(2 * fresh.cadenceSeconds, CONFIRM_WINDOW_SECONDS) * 1000;
-        if (!context.store.pendingFailure(fresh.id, new Date(finished.getTime() - window).toISOString())) {
-          const again = new Date(finished.getTime() + Math.min(fresh.cadenceSeconds, CONFIRM_SECONDS) * 1000).toISOString();
-          context.store.recordPending(fresh, recorded, finished.toISOString(), finished.getTime() - started.getTime(), again);
-          return result;
-        }
+      // history with no new state, and run again within a minute. The next run that is not held,
+      // whenever it comes, confirms or clears it, so only two non-passing runs in a row fail the
+      // check and alert, and one dropped request on a lossy link does not.
+      if (!manual && recorded.outcome !== "pass" && (fresh.lastOutcome ?? "pass") === "pass" && (fresh.pending ?? null) === null) {
+        const again = new Date(finished.getTime() + Math.min(fresh.cadenceSeconds, CONFIRM_SECONDS) * 1000).toISOString();
+        context.store.recordPending(fresh.id, recorded, finished.toISOString(), finished.getTime() - started.getTime(), again);
+        return result;
       }
       const event = context.store.recordRun(
         fresh,
@@ -57,6 +54,7 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         finished.toISOString(),
         finished.getTime() - started.getTime(),
         nextRunAt,
+        fresh.pending ?? null,
       );
       if (event !== null) onEvent(event);
       return result;
@@ -70,13 +68,13 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       .dueChecks(context.deps.now().toISOString())
       .filter((c) => !running.has(c.id));
     for (let i = 0; i < due.length; i += CONCURRENCY)
-      await Promise.all(due.slice(i, i + CONCURRENCY).map(runAndRecord));
+      await Promise.all(due.slice(i, i + CONCURRENCY).map((check) => runAndRecord(check)));
   };
 
   return {
     tick,
-    /** Runs one check now and records the result, whatever its state. */
-    runNow: runAndRecord,
+    /** Runs one check now and records the result as it is, whatever the check's state. */
+    runNow: (check: Check) => runAndRecord(check, true),
     /** Runs a check without recording anything, for setup and drafts. */
     trial: (check: Check) => runCheck(check, context),
     start: (intervalMs = 15_000) => {

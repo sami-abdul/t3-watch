@@ -68,6 +68,16 @@
 - [x] 6.2 `src/server/runner.test.ts`, `src/server/chat.test.ts`: tests that expected a failure on one
       run wait for the confirming run.
 - [x] 6.3 `README.md`: one bad run does not alert.
+- [x] 6.5 `src/server/store.ts`, `src/server/runner.ts`, `src/server/store.test.ts`: the pending
+      outcome lives on the check, so the next run that is not held confirms or clears it whenever
+      it comes; state changes and a new definition clear it; existing databases gain the column.
+- [x] 6.6 `src/server/runner.ts`, `src/server/runner.test.ts`: a run someone asks for records its
+      result as it is.
+- [x] 6.7 `src/server/store.ts`, `src/server/runner.test.ts`: a pending failure confirmed by a run
+      that could not run makes an event; `recordHeld` and `recordPending` take a check id.
+- [x] 6.8 `src/server/store.ts`, `src/server/state.ts`, `src/web/Home.tsx`,
+      `src/server/runner.test.ts`: pending runs and checks read "Failed once, checking again" in
+      the history, the status and on Home.
 - [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance, a check that fails once and then passes makes no event, and one that
       fails twice in a row makes one.

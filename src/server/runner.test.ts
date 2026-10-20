@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeWatch } from "./app.ts";
+import { homeText, readState } from "./state.ts";
 import type { ChangeEvent } from "./store.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
@@ -63,7 +64,9 @@ describe("runner", () => {
     fake.advance(301);
     await watch.runner.tick();
     expect(watch.store.check("c")!.lastOutcome).toBe("pass");
-    expect(watch.store.runs("c")[0]!.evidence).toMatchObject({ pending: true });
+    expect(watch.store.check("c")!.pending).toBe("fail");
+    expect(watch.store.runs("c")[0]!.summary).toMatch(/^Failed once, checking again: Answered 500/);
+    expect(homeText(readState(watch))).toContain("Failed once, checking again:\n- s: Site is up (c)");
     // The confirming run comes a minute later, not at the 5-minute cadence, and here it passes.
     status = 200;
     fake.advance(61);
@@ -98,7 +101,7 @@ describe("runner", () => {
     expect(events.map((e) => e.to)).toEqual(["fail", "pass"]);
   });
 
-  it("does not count a pending run left from long ago", async () => {
+  it("clears a pending run when the check is paused", async () => {
     let status = 200;
     const fake = fakeDeps({ fetch: () => new Response("", { status }) });
     const watch = testWatch(fake.deps);
@@ -119,6 +122,67 @@ describe("runner", () => {
     await watch.runner.tick();
     expect(watch.store.check("c")!.lastOutcome).toBe("pass");
     expect(events).toEqual([]);
+  });
+
+  it("records a run someone asked for as it is", async () => {
+    let status = 200;
+    const fake = fakeDeps({ fetch: () => new Response("", { status }) });
+    const watch = testWatch(fake.deps);
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 300, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
+    status = 500;
+    await watch.setCheck("c", "run");
+    expect(watch.store.check("c")!.lastOutcome).toBe("fail");
+    expect(watch.store.events().map((e) => e.to)).toEqual(["fail"]);
+  });
+
+  it("confirms within the cadence when that is under a minute", async () => {
+    let status = 200;
+    const fake = fakeDeps({ fetch: () => new Response("", { status }) });
+    const watch = testWatch(fake.deps);
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 30, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
+    status = 500;
+    fake.advance(31);
+    await watch.runner.tick();
+    fake.advance(31);
+    await watch.runner.tick();
+    expect(watch.store.check("c")!.lastOutcome).toBe("fail");
+  });
+
+  it("makes an event when a run that could not run confirms a pending failure", () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" },
+      "on",
+    );
+    const at = "2026-10-15T10:00:00.000Z";
+    watch.store.recordPending("c", { outcome: "fail", summary: "Answered 500", evidence: {} }, at, 1, at);
+    const event = watch.store.recordRun(watch.store.check("c")!, { outcome: "unknown", summary: "Could not run", evidence: {} }, at, 1, at, "fail");
+    expect(event?.to).toBe("unknown");
+    expect(watch.store.check("c")!.pending).toBeNull();
+  });
+
+  it("keeps a pending run through the same definition and clears it for a new one", () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const define = (url: string) =>
+      watch.defineCheck(
+        { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url }, keyId: null, cadenceSeconds: 60, origin: "user" },
+        "on",
+      );
+    define("https://x.test");
+    const at = "2026-10-15T10:00:00.000Z";
+    watch.store.recordPending("c", { outcome: "fail", summary: "Answered 500", evidence: {} }, at, 1, at);
+    define("https://x.test");
+    expect(watch.store.check("c")!.pending).toBe("fail");
+    define("https://y.test");
+    expect(watch.store.check("c")!.pending).toBeNull();
   });
 
   it("skips paused and snoozed checks until the snooze ends", async () => {
@@ -246,6 +310,25 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
     expect(watch.store.runs("site")[0]!.evidence).toMatchObject({ heldTooLong: true });
     expect(watch.store.events()).toHaveLength(1);
+  });
+
+  it("lets a held run sit between a pending run and the one that confirms it", async () => {
+    const { watch, net, advance } = setup();
+    await watch.runner.tick();
+    net.site = false;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.pending).toBe("fail");
+    // The link drops for the next run, which is held, then comes back for the one after.
+    net.up = false;
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while/);
+    net.up = true;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("fail");
+    expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
   });
 
   it("does not probe for a failure that changes nothing", async () => {

@@ -39,6 +39,8 @@ export interface Check {
   readonly lastRunAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** The outcome of a non-passing run waiting for a second one before the check fails, or null. */
+  readonly pending?: Outcome | null;
 }
 export interface Run {
   readonly id: number;
@@ -94,7 +96,8 @@ CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY, service_id TEXT NOT NULL, kind TEXT NOT NULL, intent TEXT NOT NULL,
   config TEXT NOT NULL, key_id TEXT, cadence_seconds INTEGER NOT NULL, state TEXT NOT NULL,
   snoozed_until TEXT, next_run_at TEXT, origin TEXT NOT NULL, last_outcome TEXT,
-  last_summary TEXT, last_run_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  last_summary TEXT, last_run_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  pending TEXT);
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, check_id TEXT NOT NULL, at TEXT NOT NULL,
   outcome TEXT NOT NULL, summary TEXT NOT NULL, evidence TEXT NOT NULL, duration_ms INTEGER NOT NULL);
@@ -153,6 +156,7 @@ const toCheck = (r: Row): Check => ({
   lastRunAt: str(r.last_run_at),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
+  pending: str(r.pending) as Outcome | null,
 });
 const toRun = (r: Row): Run => ({
   id: Number(r.id),
@@ -193,6 +197,9 @@ export const openStore = (file: string) => {
   // The timeout first, so a CLI opening the file while the service writes waits instead of failing.
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
   db.exec(SCHEMA);
+  // Columns added after a database was first made.
+  if (!(db.prepare("PRAGMA table_info(checks)").all() as Array<Row>).some((column) => column.name === "pending"))
+    db.exec("ALTER TABLE checks ADD COLUMN pending TEXT");
   const all = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).all(...params) as Array<Row>;
   const one = (sql: string, ...params: Array<string | number | null>) =>
@@ -283,7 +290,8 @@ export const openStore = (file: string) => {
            intent = excluded.intent, config = excluded.config, key_id = excluded.key_id,
            cadence_seconds = excluded.cadence_seconds, state = excluded.state,
            snoozed_until = excluded.snoozed_until, next_run_at = excluded.next_run_at,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           pending = CASE WHEN kind = excluded.kind AND config = excluded.config THEN pending ELSE NULL END`,
         c.id,
         c.serviceId,
         c.kind,
@@ -308,7 +316,7 @@ export const openStore = (file: string) => {
       extra: { snoozedUntil?: string | null; nextRunAt?: string | null } = {},
     ) =>
       exec(
-        `UPDATE checks SET state = ?, snoozed_until = ?, next_run_at = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE checks SET state = ?, snoozed_until = ?, next_run_at = ?, updated_at = ?, pending = NULL WHERE id = ?`,
         state,
         extra.snoozedUntil ?? null,
         extra.nextRunAt ?? null,
@@ -337,10 +345,11 @@ export const openStore = (file: string) => {
       at: string,
       durationMs: number,
       nextRunAt: string,
+      pending: Outcome | null = null,
     ): ChangeEvent | null => {
       addRun(check.id, at, result.outcome, result.summary, result.evidence, durationMs);
       exec(
-        `UPDATE checks SET last_outcome = ?, last_summary = ?, last_run_at = ?, next_run_at = ?,
+        `UPDATE checks SET last_outcome = ?, last_summary = ?, last_run_at = ?, next_run_at = ?, pending = NULL,
            snoozed_until = CASE WHEN snoozed_until IS NOT NULL AND snoozed_until <= ? THEN NULL ELSE snoozed_until END
          WHERE id = ?`,
         result.outcome,
@@ -351,7 +360,9 @@ export const openStore = (file: string) => {
         check.id,
       );
       const previous = check.lastOutcome;
-      if (!changesState(previous, result.outcome)) return null;
+      // A pending failure confirmed by a run that could not run still leaves passing behind.
+      const confirmsFailure = pending === "fail" && result.outcome !== "pass";
+      if (!changesState(previous, result.outcome) && !confirmsFailure) return null;
       const info = exec(
         "INSERT INTO events (check_id, at, from_outcome, to_outcome, summary) VALUES (?, ?, ?, ?, ?)",
         check.id,
@@ -367,34 +378,29 @@ export const openStore = (file: string) => {
      * result and no event is made; only its next run time moves.
      */
     recordHeld: (
-      check: Check,
+      checkId: string,
       result: { outcome: Outcome; summary: string; evidence: Record<string, unknown> },
       at: string,
       durationMs: number,
       nextRunAt: string,
     ) => {
       const summary = `Held while Watch could not reach the internet: ${result.summary}`.slice(0, 300);
-      setAside(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs, nextRunAt);
+      setAside(checkId, at, "unknown", summary, { ...result.evidence, held: true }, durationMs, nextRunAt);
     },
     /**
      * Keeps a non-passing run that waits for a second one before the check fails. The check keeps
-     * its last result and no event is made; only its next run time moves.
+     * its last result and no event is made; it remembers the outcome and runs again at nextRunAt.
      */
     recordPending: (
-      check: Check,
+      checkId: string,
       result: { outcome: Outcome; summary: string; evidence: Record<string, unknown> },
       at: string,
       durationMs: number,
       nextRunAt: string,
-    ) => setAside(check.id, at, result.outcome, result.summary, { ...result.evidence, pending: true }, durationMs, nextRunAt),
-    /** Whether a check's latest run that was not held is a pending failure from `since` or later. */
-    pendingFailure: (checkId: string, since: string) => {
-      const run = one(
-        `SELECT at, json_extract(evidence, '$.pending') AS pending FROM runs
-          WHERE check_id = ? AND json_extract(evidence, '$.held') IS NOT 1 ORDER BY id DESC LIMIT 1`,
-        checkId,
-      );
-      return run !== undefined && Number(run.pending) === 1 && String(run.at) >= since;
+    ) => {
+      const summary = `Failed once, checking again: ${result.summary}`.slice(0, 300);
+      setAside(checkId, at, result.outcome, summary, { ...result.evidence, pending: true }, durationMs, nextRunAt);
+      exec("UPDATE checks SET pending = ? WHERE id = ?", result.outcome, checkId);
     },
     /**
      * How many held runs a check has had since its last run recorded while Watch was online. A run

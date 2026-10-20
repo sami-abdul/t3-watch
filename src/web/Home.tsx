@@ -154,7 +154,7 @@ export function Home({
               rows={[...model.passing, ...model.waiting].map((check) => ({
                 key: check.id,
                 title: `${check.serviceLabel}: ${check.intent}`,
-                detail: `${check.lastSummary ?? "Waiting for its first run"} · ${ago(check.lastRunAt, now)}`,
+                detail: `${(check.pending ?? null) !== null ? "Failed once, checking again" : (check.lastSummary ?? "Waiting for its first run")} · ${ago(check.lastRunAt, now)}`,
                 badge: check.lastOutcome === null ? null : outcomeTone[check.lastOutcome],
               }))}
             />

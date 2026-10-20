@@ -74,6 +74,9 @@ export const homeText = (state: WatchState) => {
     );
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));
+  const checkingAgain = on.filter((c) => (c.pending ?? null) !== null);
+  if (checkingAgain.length > 0)
+    lines.push("", "Failed once, checking again:", ...checkingAgain.map((c) => `- ${c.serviceLabel}: ${c.intent} (${c.id})`));
   if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
   if (state.vendorDrafts.length > 0)
     lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => String(d.description.label ?? d.id)).join(", ")}`);
