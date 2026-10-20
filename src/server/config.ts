@@ -55,3 +55,12 @@ export const pageUrl = (config: WatchConfig) => config.publicUrl ?? localUrl(con
 
 export const signInUrl = (config: WatchConfig) =>
   `${pageUrl(config)}/signin?token=${encodeURIComponent(config.token)}`;
+
+/**
+ * The sign-in line for start and install. The link carries the access token, so it goes only to
+ * a terminal, never to a service log or an agent's transcript.
+ */
+export const signInLine = (config: WatchConfig, terminal: boolean) =>
+  terminal
+    ? `Open this link once to sign in: ${signInUrl(config)}`
+    : "For the sign-in link, run t3-watch url in a terminal. It carries the access token, so keep it out of logs and chats.";

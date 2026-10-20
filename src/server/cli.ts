@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeWatch } from "./app.ts";
-import { loadConfig, localUrl, pageUrl, signInUrl, watchHome } from "./config.ts";
+import { loadConfig, localUrl, pageUrl, signInLine, signInUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
 import { extendServer } from "./extend.ts";
@@ -53,7 +53,7 @@ const start = async () => {
   watch.runner.start();
   extension.start();
   console.log(`t3-watch is running at ${pageUrl(config)}`);
-  console.log(`Sign in: ${signInUrl(config)}`);
+  console.log(signInLine(config, process.stdout.isTTY === true));
   const stop = () => {
     extension.stop();
     server.close();
@@ -148,7 +148,7 @@ WantedBy=default.target
   } else throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
   for (const line of await registerMcp()) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
-  console.log(`Open this link once to sign in: ${signInUrl(config)}`);
+  console.log(signInLine(config, process.stdout.isTTY === true));
   if (platform() === "linux")
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
 };

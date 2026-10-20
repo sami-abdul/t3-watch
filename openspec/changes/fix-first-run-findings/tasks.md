@@ -2,7 +2,7 @@
 
 - [x] 1.1 `src/server/config.ts`, `src/server/cli.ts`, `src/server/mcp-relay.ts`: one helper for
       the local address; `status` uses it.
-- [ ] 1.2 `src/server/cli.ts`: print the sign-in link only when stdout is a terminal.
+- [x] 1.2 `src/server/cli.ts`: print the sign-in link only when stdout is a terminal.
 
 ## 2. Page
 
