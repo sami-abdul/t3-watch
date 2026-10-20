@@ -66,15 +66,16 @@ describe("mcp", () => {
     const { client } = await connect(watch);
     const text = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);
     expect(text.split("\n")[0]).toBe(
-      "Watch cannot reach the internet since 2026-10-15 10:00 UTC. Checks that need it are on hold, and nothing alerts until it is back.",
+      "Watch cannot reach the internet since 2026-10-15 10:00 UTC. Failures of checks that need it are held for up to an hour each, and nothing alerts meanwhile.",
     );
-    // After an hour offline Watch records failures again, and says so.
+    expect(watch.store.check("site")!.lastOutcome).toBeNull();
+    // After an hour of held runs the check's failure is recorded, while Watch still says it is offline.
     for (let i = 0; i < 4; i++) {
       fake.advance(20 * 60);
       await watch.runner.tick();
     }
     const later = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);
-    expect(later.split("\n")[0]).toContain("After an hour offline it records failures again");
+    expect(later.split("\n")[0]).toMatch(/^Watch cannot reach the internet since 2026-10-15 10:00 UTC\./);
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
   });
 

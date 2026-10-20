@@ -32,15 +32,15 @@
       `src/web/Home.tsx`, `src/web/logic.test.ts`, `src/server/chat.test.ts`,
       `src/server/connectivity.test.ts`: probe addresses must parse; holding stops
       after an hour offline, and the notice says so.
-- [ ] 4.4 `src/server/hosts.ts`, `src/server/hosts.test.ts`, `src/server/config.ts`,
+- [x] 4.4 `src/server/hosts.ts`, `src/server/hosts.test.ts`, `src/server/config.ts`,
       `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: one BlockList classifier for
       hosts; checks on the local network and the tailnet are held while offline, and only checks
       that reach the internet prove the link.
-- [ ] 4.5 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`,
+- [x] 4.5 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`,
       `src/server/chat.test.ts`, `src/server/state.ts`, `src/web/Home.tsx`, `src/web/logic.test.ts`:
       a check's failures are held at most an hour in a row, counted from its runs, and the notice
       says so.
-- [ ] 4.6 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`: only a failure
+- [x] 4.6 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`: only a failure
       that would change the check's state probes.
 
 ## 5. Verification

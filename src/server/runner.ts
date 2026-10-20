@@ -1,6 +1,6 @@
 import { type CheckContext, runCheck } from "./checks/index.ts";
-import { type Connectivity, needsInternet } from "./connectivity.ts";
-import type { ChangeEvent, Check } from "./store.ts";
+import { type Connectivity, heldWhenOffline, MAX_HOLD_MS, provesInternet } from "./connectivity.ts";
+import { type ChangeEvent, type Check, changesState } from "./store.ts";
 
 const CONCURRENCY = 4;
 
@@ -19,11 +19,14 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       const fresh = context.store.check(check.id);
       if (fresh === null) return null;
       const nextRunAt = new Date(finished.getTime() + fresh.cadenceSeconds * 1000).toISOString();
-      // When a check that needs the internet does not pass, Watch's own link may be what is down.
-      // Then the result is held: kept in the history, with no new state and no event.
-      if (needsInternet(fresh)) {
-        if (result.outcome === "pass") link.sawInternet();
-        else if (await link.hold()) {
+      // A failure that would change the check's state may only mean Watch's own link is down. Then it
+      // is held, kept in the history with no new state and no event, for at most an hour in a row.
+      if (result.outcome === "pass") {
+        if (provesInternet(fresh)) link.sawInternet();
+      } else if (heldWhenOffline(fresh) && changesState(fresh.lastOutcome, result.outcome)) {
+        const heldSince = context.store.heldSince(fresh.id);
+        const capped = heldSince !== null && finished.getTime() - Date.parse(heldSince) > MAX_HOLD_MS;
+        if (!capped && (await link.hold())) {
           context.store.recordHeld(fresh, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
           return result;
         }

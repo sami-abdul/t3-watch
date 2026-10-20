@@ -80,10 +80,8 @@ export function Home({
       </div>
       {state.link.offlineSince !== null ? (
         <Muted className="text-foreground">
-          Watch lost its internet connection {ago(state.link.offlineSince, now)}.{" "}
-          {state.link.holding
-            ? "Checks that need it are on hold, and nothing alerts until it is back."
-            : "After an hour offline it records failures again, in case the probe addresses are what is blocked."}
+          Watch lost its internet connection {ago(state.link.offlineSince, now)}. Failures of checks that need it are held for up to an hour each,
+          and nothing alerts meanwhile.
         </Muted>
       ) : null}
       {notice !== null ? <Muted className="text-foreground">{notice}</Muted> : null}

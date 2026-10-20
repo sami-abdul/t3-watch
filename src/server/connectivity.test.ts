@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PROBE_URLS, makeConnectivity, needsInternet } from "./connectivity.ts";
+import { DEFAULT_PROBE_URLS, heldWhenOffline, makeConnectivity, provesInternet } from "./connectivity.ts";
 import { fakeDeps } from "./testkit.ts";
 
 const setup = (probeUrls?: ReadonlyArray<string>) => {
@@ -75,41 +75,18 @@ describe("connectivity", () => {
     }
   });
 
-  it("stops holding after an hour offline, while still saying Watch is offline", async () => {
-    const { link, net, advance } = setup();
-    net.up = false;
-    expect(await link.hold()).toBe(true);
-    for (let minutes = 20; minutes <= 60; minutes += 20) {
-      advance(20 * 60);
-      expect(await link.hold()).toBe(true);
-    }
-    advance(60);
-    expect(await link.hold()).toBe(false);
-    expect(link.link()).toEqual({ offlineSince: "2026-10-15T10:00:00.000Z", holding: false });
-  });
-
-  it("knows which checks need the internet", () => {
-    expect(needsInternet({ kind: "heartbeat", config: {} })).toBe(false);
-    // This machine, the local network and the tailnet need no internet.
-    for (const url of [
-      "http://localhost:8080/",
-      "http://localhost./",
-      "http://127.0.0.1/",
-      "http://0.0.0.0:8460/",
-      "http://[::1]:3000/",
-      "http://[::ffff:127.0.0.1]/",
-      "http://app.localhost/",
-      "http://192.168.1.10/",
-      "http://10.0.0.2/",
-      "http://172.20.0.5/",
-      "http://100.65.64.7:8460/",
-      "http://[fd7a:115c:a1e0::1]/",
-      "http://nas.local/",
-      "https://leviathan.tail5ed0f2.ts.net:8461/",
-    ])
-      expect(needsInternet({ kind: "http", config: { url } }), url).toBe(false);
-    for (const url of ["https://example.com/", "http://172.32.0.1/", "http://8.8.8.8/", "http://[2606:4700::1111]/"])
-      expect(needsInternet({ kind: "http", config: { url } }), url).toBe(true);
-    expect(needsInternet({ kind: "github", config: {} })).toBe(true);
+  it("holds every check but heartbeats and this machine's, and only internet passes prove the link", () => {
+    const http = (url: string) => ({ kind: "http" as const, config: { url } });
+    expect(heldWhenOffline({ kind: "heartbeat", config: {} })).toBe(false);
+    expect(heldWhenOffline(http("http://127.0.0.1:8080/"))).toBe(false);
+    for (const url of ["http://192.168.1.10/", "https://leviathan.tail5ed0f2.ts.net:8461/", "https://example.com/", "not a url"])
+      expect(heldWhenOffline(http(url)), url).toBe(true);
+    expect(heldWhenOffline({ kind: "github", config: {} })).toBe(true);
+    // A pass on the local network or the tailnet says nothing about the internet.
+    for (const url of ["http://127.0.0.1/", "http://nas.local/", "http://100.65.64.7:8460/", "not a url"])
+      expect(provesInternet(http(url)), url).toBe(false);
+    expect(provesInternet(http("https://example.com/"))).toBe(true);
+    expect(provesInternet({ kind: "vendor", config: {} })).toBe(true);
+    expect(provesInternet({ kind: "heartbeat", config: {} })).toBe(false);
   });
 });

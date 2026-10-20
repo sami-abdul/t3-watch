@@ -1,6 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 
 export type Outcome = "pass" | "fail" | "unknown";
+
+/** Whether recording an outcome changes a check's state and so makes an event: a first run only when it fails. */
+export const changesState = (previous: Outcome | null, outcome: Outcome) =>
+  previous === null ? outcome === "fail" : previous !== outcome;
 /**
  * proposed: found by setup, waiting for review. on: runs on its cadence. paused: stopped by a
  * person or agent. draft: written by an agent, waiting for a person. off: left off in review.
@@ -334,8 +338,7 @@ export const openStore = (file: string) => {
         check.id,
       );
       const previous = check.lastOutcome;
-      const changed = previous === null ? result.outcome === "fail" : previous !== result.outcome;
-      if (!changed) return null;
+      if (!changesState(previous, result.outcome)) return null;
       const info = exec(
         "INSERT INTO events (check_id, at, from_outcome, to_outcome, summary) VALUES (?, ?, ?, ?, ?)",
         check.id,
@@ -360,6 +363,15 @@ export const openStore = (file: string) => {
       const summary = `Held while Watch could not reach the internet: ${result.summary}`.slice(0, 300);
       addRun(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs);
       exec("UPDATE checks SET next_run_at = ? WHERE id = ?", nextRunAt, check.id);
+    },
+    /** When a check's current streak of held runs began, or null when its latest run was not held. */
+    heldSince: (checkId: string): string | null => {
+      let since: string | null = null;
+      for (const run of all("SELECT at, evidence FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 200", checkId)) {
+        if (parse<{ held?: unknown }>(run.evidence, {}).held !== true) break;
+        since = String(run.at);
+      }
+      return since;
     },
     /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
     setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>

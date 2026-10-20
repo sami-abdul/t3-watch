@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isLoopbackHost } from "./hosts.ts";
+
 export interface WatchConfig {
   readonly port: number;
   readonly host: string;
@@ -28,16 +30,6 @@ const defaultRoots = () =>
 
 /** An IPv6 address without the brackets URLs put around it, the form listen() wants. */
 export const bareHost = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
-
-/** Whether a host, bracketed or not, is this machine: 127.0.0.0/8, ::1 and their mapped forms, or localhost. */
-export const isLoopbackHost = (host: string) => {
-  const bare = bareHost(host).replace(/\.$/, "").toLowerCase();
-  if (bare === "localhost" || bare.endsWith(".localhost") || bare === "::1") return true;
-  const dotted = /^(?:::ffff:)?(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.exec(bare);
-  if (dotted !== null) return dotted[1] === "127";
-  const mapped = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(bare);
-  return mapped !== null && parseInt(mapped[1]!, 16) >> 8 === 127;
-};
 
 /** Reads config.json, creating it with a fresh token on first use. */
 export const loadConfig = (home = watchHome()): WatchConfig => {
