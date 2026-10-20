@@ -21,6 +21,8 @@
 
 - [x] 3.3 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_home` puts its summary in the
       structured content as well as the text.
+- [x] 3.4 `src/web/Details.tsx`: with alerts off and a secret stored, Alerts says the secret was
+      shown once and to make a new one if it was not kept.
 
 ## 4. Checks
 

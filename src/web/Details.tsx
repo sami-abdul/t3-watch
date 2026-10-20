@@ -186,8 +186,10 @@ export function Details({
             : client.makeAlertSecret === null
               ? "Off. Make a signing secret on the Watch page, then ask the Watch thread to set up alerts."
               : state.alerts.signed
-                ? "Off. A signing secret is ready: ask your Watch thread to set up alerts and paste the secret into the card it shows."
-                : "Off. Make a signing secret, then ask your Watch thread to set up alerts. It creates a T3 webhook task and asks you to paste the secret into a private card."}
+                ? secret !== null
+                  ? "Off. A signing secret is ready: ask your Watch thread to set up alerts and paste the secret into the card it shows."
+                  : "Off. A signing secret was made and shown once. If you kept it, ask your Watch thread to set up alerts and paste it into the card it shows. If not, make a new one."
+                :"Off. Make a signing secret, then ask your Watch thread to set up alerts. It creates a T3 webhook task and asks you to paste the secret into a private card."}
         </Muted>
         {client.makeAlertSecret === null ? null : secret !== null ? (
           <div className="space-y-2">
