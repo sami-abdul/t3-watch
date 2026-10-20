@@ -47,7 +47,8 @@ export const saveConfig = (config: WatchConfig, home = watchHome()) => {
 
 /** Where tools on this machine reach the service: its own address, or loopback when it listens everywhere. */
 export const localUrl = (config: WatchConfig) => {
-  const host = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
+  const bare = config.host.replace(/^\[(.*)\]$/, "$1");
+  const host = bare === "0.0.0.0" || bare === "::" ? "127.0.0.1" : bare;
   return `http://${host.includes(":") ? `[${host}]` : host}:${config.port}`;
 };
 

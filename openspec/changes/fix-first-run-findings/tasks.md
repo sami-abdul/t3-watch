@@ -39,7 +39,7 @@
       the agent instructions say never to fetch the sign-in link.
 - [x] 5.5 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the secret
       route takes only the page's signed-in session from the page's own origin.
-- [ ] 5.6 `src/server/config.ts`, `src/server/config.test.ts`: `localUrl` accepts a bracketed
+- [x] 5.6 `src/server/config.ts`, `src/server/config.test.ts`: `localUrl` accepts a bracketed
       IPv6 host.
 - [x] 5.7 `src/web/Details.tsx`: the folder list shows a load error instead of falling back.
 - [x] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.

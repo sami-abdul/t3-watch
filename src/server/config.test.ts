@@ -16,6 +16,8 @@ describe("config", () => {
     expect(localUrl(config("100.64.0.7"))).toBe("http://100.64.0.7:8460");
     expect(localUrl(config("0.0.0.0"))).toBe("http://127.0.0.1:8460");
     expect(localUrl(config("::1"))).toBe("http://[::1]:8460");
+    expect(localUrl(config("[::1]"))).toBe("http://[::1]:8460");
+    expect(new URL("/mcp", localUrl(config("[::1]"))).href).toBe("http://[::1]:8460/mcp");
   });
 
   it("prints the token-bearing sign-in link only to a terminal", () => {
