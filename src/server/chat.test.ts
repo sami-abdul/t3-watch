@@ -182,7 +182,8 @@ describe("alerts", () => {
     expect(refused.isError).toBe(true);
     expect(firstText(refused as never)).toContain("Make a signing secret");
     expect(alertSettings(watch)).toEqual({ url: null, secret });
-    const set = await client.callTool({ name: "watch_set_alerts", arguments: { url: "https://t3.example/hook" } });
+    // A null secret is what some clients send for a field they leave out.
+    const set = await client.callTool({ name: "watch_set_alerts", arguments: { url: "https://t3.example/hook", secret: null } });
     expect(firstText(set as never)).toBe("Alerts go to https://t3.example/hook, signed.");
     expect(alertSettings(watch)).toEqual({ url: "https://t3.example/hook", secret });
   });

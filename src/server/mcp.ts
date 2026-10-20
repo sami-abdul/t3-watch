@@ -265,7 +265,8 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
     safely(async ({ url, secret }: { url: string | null; secret?: unknown }) => {
-      if (secret !== undefined) throw new WatchError(SECRET_REFUSED);
+      // Some clients send null for every optional field they leave out.
+      if (secret !== undefined && secret !== null) throw new WatchError(SECRET_REFUSED);
       const result = setAlerts(watch, { url });
       return text(
         result.url === null
