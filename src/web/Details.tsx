@@ -60,8 +60,9 @@ export function Details({
   const [makingSecret, setMakingSecret] = useState(false);
   // Replacing a secret while alerts are on stops them until the T3 task has the new one.
   const [confirmReplace, setConfirmReplace] = useState(false);
+  const [rootsError, setRootsError] = useState<string | null>(null);
   useEffect(() => {
-    client.roots?.().then(setConfigured, () => {});
+    client.roots?.().then(setConfigured, (e: unknown) => setRootsError(e instanceof Error ? e.message : String(e)));
   }, [client]);
   const act = async (work: () => Promise<unknown>) => {
     setError(null);
@@ -232,13 +233,17 @@ export function Details({
           <textarea
             className={cn("w-full rounded-lg border border-border bg-transparent p-3 font-mono text-foreground", typeClass("caption"))}
             rows={3}
-            value={roots ?? (configured ?? state.setup.scan?.roots ?? []).join("\n")}
+            // Never the last scan's folders: saving those would overwrite a config this page never read.
+            value={roots ?? configured?.join("\n") ?? ""}
+            placeholder={configured === null ? (rootsError === null ? "Loading…" : "") : undefined}
+            disabled={configured === null}
             onChange={(e) => setRoots(e.target.value)}
           />
+          {rootsError !== null ? <Muted className="text-destructive">Could not read the folder list: {rootsError}</Muted> : null}
           <Button
             size="compact"
             variant="secondary"
-            disabled={roots === null}
+            disabled={roots === null || configured === null}
             onClick={() =>
               act(async () => {
                 const list = (roots ?? "").split("\n").map((r) => r.trim()).filter(Boolean);
