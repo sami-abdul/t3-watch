@@ -170,8 +170,9 @@ describe("alerts", () => {
     expect((await make({ ...page, origin: "http://evil.test" })).status).toBe(403);
     expect((await make({ ...page, "sec-fetch-site": "same-site" })).status).toBe(403);
     expect(alertSettings(watch).secret).toBeNull();
-    // Behind a proxy that forwards the browser's host.
-    expect((await make({ ...page, origin: "https://watch.proxy.test", "x-forwarded-host": "watch.proxy.test" })).status).toBe(200);
+    // A forwarded host is not trusted; publicUrl names a proxy's origin.
+    expect((await make({ ...page, origin: "http://evil.test", "x-forwarded-host": "evil.test" })).status).toBe(403);
+    expect((await make({ ...page, origin: "https://watch.example" })).status).toBe(200);
     const response = await make(page);
     const { secret } = (await response.json()) as { secret: string };
     expect(secret).toMatch(/^[0-9a-f]{64}$/);
