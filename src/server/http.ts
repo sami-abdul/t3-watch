@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { isSession, isSignInCodeShape, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
+import { isLiveSignInCode, isSession, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
 import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
 
@@ -156,17 +156,26 @@ export const makeHttpServer = (options: {
     };
     if (request.method === "GET" || request.method === "HEAD") {
       const code = url.searchParams.get("code") ?? "";
-      if (!isSignInCodeShape(code)) return refuse();
+      // A spent or expired code gets no button, so nobody presses one that cannot work.
+      if (!isLiveSignInCode(watch.store, code, watch.deps.now())) return refuse();
       response.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
-        "referrer-policy": "no-referrer",
+        // Not no-referrer: under it a browser sends Origin: null on the form's POST, which the
+        // origin check below refuses. same-origin still keeps the code out of other sites' logs.
+        "referrer-policy": "same-origin",
         "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
       });
       response.end(signInPage(code));
       return true;
     }
     if (request.method !== "POST") return false;
+    // The press must come from the page the link opened, so another site cannot spend a code.
+    if (!fromPage(request, options.config().publicUrl)) {
+      response.writeHead(403, { "content-type": "text/plain", "cache-control": "no-store" });
+      response.end("Press Sign in on the page the link opens.");
+      return true;
+    }
     const form = await readForm(request);
     if (!useSignInCode(watch.store, form.get("code") ?? "", watch.deps.now())) return refuse();
     const session = startSession(watch.store, watch.deps.now());

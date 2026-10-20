@@ -39,7 +39,7 @@
 - [x] 4.6 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
       `src/server/http.ts`, `src/server/http.test.ts`: sessions end after 90 days; the cookie is read
       without decoding.
-- [ ] 4.7 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/store.ts`: a spent or expired
+- [x] 4.7 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/store.ts`: a spent or expired
       link is refused before the button shows; the press must come from the page's own origin.
 - [ ] 4.8 `src/server/http.ts`: one body reader for JSON and forms.
 - [ ] 4.9 `src/server/cli.ts`, `src/server/cli.test.ts`: `signout` says when a folder holds no Watch;

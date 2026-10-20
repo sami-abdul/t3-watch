@@ -65,7 +65,8 @@ describe("mcp", () => {
       fetch(new URL("/signin", url), {
         method: "POST",
         redirect: "manual",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        // A browser on the link's page sends publicUrl's origin, as it would behind a proxy.
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(link).origin },
         body: `code=${new URL(link).searchParams.get("code")}`,
       });
     expect((await press()).status).toBe(302);

@@ -28,6 +28,10 @@ export const isSignInCodeShape = (code: string) => /^[A-Za-z0-9_-]{32}$/.test(co
 export const useSignInCode = (store: Store, code: string, now: Date) =>
   isSignInCodeShape(code) && store.takeSignInCode(hash(code), now.toISOString());
 
+/** Whether a code would still sign a browser in, checked without using it up. */
+export const isLiveSignInCode = (store: Store, code: string, now: Date) =>
+  isSignInCodeShape(code) && store.hasSignInCode(hash(code), now.toISOString());
+
 export const signInLink = (pageUrl: string, code: string) => `${pageUrl}/signin?code=${code}`;
 
 /**

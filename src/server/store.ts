@@ -461,6 +461,9 @@ export const openStore = (file: string) => {
     /** Uses up a sign-in code: true only the first time, and only before it expires. One write. */
     takeSignInCode: (hash: string, now: string) =>
       Number(exec("DELETE FROM signin_codes WHERE hash = ? AND expires_at > ?", hash, now).changes) === 1,
+    /** Whether a sign-in code exists and has not expired, without using it up. */
+    hasSignInCode: (hash: string, now: string) =>
+      one("SELECT 1 AS found FROM signin_codes WHERE hash = ? AND expires_at > ?", hash, now) !== undefined,
 
     /** Keeps the hash of a browser session, clearing sessions that began before the cutoff. */
     addSession: (hash: string, at: string, cutoff: string) => {
