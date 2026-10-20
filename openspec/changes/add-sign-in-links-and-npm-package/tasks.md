@@ -41,7 +41,7 @@
       without decoding.
 - [x] 4.7 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/store.ts`: a spent or expired
       link is refused before the button shows; the press must come from the page's own origin.
-- [ ] 4.8 `src/server/http.ts`: one body reader for JSON and forms.
+- [x] 4.8 `src/server/http.ts`, `src/server/http.test.ts`: one body reader for JSON and forms.
 - [ ] 4.9 `src/server/cli.ts`, `src/server/cli.test.ts`: `signout` says when a folder holds no Watch;
       `status` and `url` share one probe, and `url` words a slow Watch as unreachable, not absent.
 

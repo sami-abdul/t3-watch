@@ -73,6 +73,22 @@ describe("http", () => {
     expect((await fetch(`${base}/signin?token=test-token-123`)).status).toBe(401);
   });
 
+  it("refuses a form or JSON body over its limit", async () => {
+    const { base } = await serve();
+    const form = await fetch(`${base}/signin`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
+      body: `code=${"x".repeat(5000)}`,
+    });
+    expect(form.status).toBe(413);
+    const json = await fetch(`${base}/api/keys`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-token-123", "content-type": "application/json" },
+      body: JSON.stringify({ value: "x".repeat(65 * 1024) }),
+    });
+    expect(json.status).toBe(413);
+  });
+
   it("accepts heartbeats without the token but only for known checks", async () => {
     const { base, watch } = await serve();
     watch.defineCheck(

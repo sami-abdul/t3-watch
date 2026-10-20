@@ -67,16 +67,19 @@ export const sendJson = (response: ServerResponse, status: number, body: unknown
   response.end(JSON.stringify(body));
 };
 
-const readForm = async (request: IncomingMessage) => {
+/** Reads a request body, refusing one larger than the limit. */
+const readBody = async (request: IncomingMessage, limit: number) => {
   const chunks: Array<Buffer> = [];
   let size = 0;
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size > 4096) throw new WatchError("Request too large", 413);
+    if (size > limit) throw new WatchError("Request too large", 413);
     chunks.push(chunk as Buffer);
   }
-  return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks);
 };
+
+const readForm = async (request: IncomingMessage) => new URLSearchParams((await readBody(request, 4096)).toString("utf8"));
 
 /** The page a sign-in link opens: one button that posts the code. The code is URL-safe base64. */
 const signInPage = (code: string) => `<!doctype html>
@@ -94,16 +97,10 @@ button { font: inherit; padding: .5rem 1.1rem; border: 0; border-radius: .6rem; 
 `;
 
 export const readJson = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
-  const chunks: Array<Buffer> = [];
-  let size = 0;
-  for await (const chunk of request) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new WatchError("Request too large", 413);
-    chunks.push(chunk as Buffer);
-  }
-  if (size === 0) return {};
+  const body = await readBody(request, MAX_BODY);
+  if (body.length === 0) return {};
   try {
-    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    const parsed = JSON.parse(body.toString("utf8")) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     return parsed as Record<string, unknown>;
   } catch {
