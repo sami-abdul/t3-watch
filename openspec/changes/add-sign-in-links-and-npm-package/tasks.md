@@ -7,7 +7,7 @@
 - [x] 1.3 `src/server/cli.ts`, `src/server/cli.test.ts`, `src/server/config.ts`,
       `src/server/config.test.ts`, `README.md`: `url` and `install` print a one-time link; `start`
       points at `t3-watch url`.
-- [ ] 1.4 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_sign_in_link` and the agent
+- [x] 1.4 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_sign_in_link` and the agent
       instructions for it.
 
 ## 2. Loopback listener

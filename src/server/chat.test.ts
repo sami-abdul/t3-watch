@@ -53,6 +53,18 @@ describe("mcp", () => {
     expect(firstText(home as never)).toBe(summary);
   });
 
+  it("makes a one-time sign-in link the page accepts once", async () => {
+    const { client, url } = await connect(testWatch(fakeDeps({}).deps));
+    expect(client.getInstructions()).toContain("watch_sign_in_link");
+    const result = await client.callTool({ name: "watch_sign_in_link", arguments: {} });
+    const link = firstText(result as never).split("\n")[0]!;
+    expect(link).toMatch(/^https:\/\/watch\.example\/signin\?code=[A-Za-z0-9_-]{32}$/);
+    expect(link).not.toContain(config.token);
+    const signin = new URL(`/signin${new URL(link).search}`, url);
+    expect((await fetch(signin, { redirect: "manual" })).status).toBe(302);
+    expect((await fetch(signin, { redirect: "manual" })).status).toBe(401);
+  });
+
   it("refuses MCP without the token", async () => {
     const { url } = await connect(testWatch(fakeDeps({}).deps));
     const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
