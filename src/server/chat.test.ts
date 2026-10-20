@@ -60,9 +60,15 @@ describe("mcp", () => {
     const link = firstText(result as never).split("\n")[0]!;
     expect(link).toMatch(/^https:\/\/watch\.example\/signin\?code=[A-Za-z0-9_-]{32}$/);
     expect(link).not.toContain(config.token);
-    const signin = new URL(`/signin${new URL(link).search}`, url);
-    expect((await fetch(signin, { redirect: "manual" })).status).toBe(302);
-    expect((await fetch(signin, { redirect: "manual" })).status).toBe(401);
+    const press = () =>
+      fetch(new URL("/signin", url), {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: `code=${new URL(link).searchParams.get("code")}`,
+      });
+    expect((await press()).status).toBe(302);
+    expect((await press()).status).toBe(401);
   });
 
   it("refuses MCP without the token", async () => {

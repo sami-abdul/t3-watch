@@ -31,13 +31,27 @@ describe("http", () => {
   it("signs in once with a one-time link and sets a cookie", async () => {
     const { base, watch } = await serve();
     const code = makeSignInCode(watch.store, watch.deps.now());
-    const response = await fetch(`${base}/signin?code=${code}`, { redirect: "manual" });
+    // Opening the link, as a chat preview would, shows a button and spends nothing.
+    const opened = await fetch(`${base}/signin?code=${code}`);
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(await opened.text()).toContain(`name="code" value="${code}"`);
+    expect((await fetch(`${base}/signin?code=${code}`, { method: "HEAD" })).status).toBe(200);
+    const press = (value: string) =>
+      fetch(`${base}/signin`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code: value }).toString(),
+      });
+    const response = await press(code);
     expect(response.status).toBe(302);
     const cookie = response.headers.get("set-cookie")!.split(";")[0]!;
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(200);
-    // The same link again, and a link carrying the access token, are refused.
-    expect((await fetch(`${base}/signin?code=${code}`, { redirect: "manual" })).status).toBe(401);
-    expect((await fetch(`${base}/signin?token=test-token-123`, { redirect: "manual" })).status).toBe(401);
+    // The same code again, a malformed one, and a link carrying the access token are refused.
+    expect((await press(code)).status).toBe(401);
+    expect((await fetch(`${base}/signin?code=<script>`)).status).toBe(401);
+    expect((await fetch(`${base}/signin?token=test-token-123`)).status).toBe(401);
   });
 
   it("accepts heartbeats without the token but only for known checks", async () => {

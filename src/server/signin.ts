@@ -17,8 +17,11 @@ export const makeSignInCode = (store: Store, now: Date) => {
   return code;
 };
 
+/** Whether a string could be a code, checked before it touches the database or a page. */
+export const isSignInCodeShape = (code: string) => /^[A-Za-z0-9_-]{32}$/.test(code);
+
 /** True once for a code that exists and has not expired. */
 export const useSignInCode = (store: Store, code: string, now: Date) =>
-  /^[A-Za-z0-9_-]{32}$/.test(code) && store.takeSignInCode(hash(code), now.toISOString());
+  isSignInCodeShape(code) && store.takeSignInCode(hash(code), now.toISOString());
 
 export const signInLink = (pageUrl: string, code: string) => `${pageUrl}/signin?code=${code}`;

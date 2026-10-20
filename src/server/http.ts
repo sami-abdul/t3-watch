@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { useSignInCode } from "./signin.ts";
+import { isSignInCodeShape, useSignInCode } from "./signin.ts";
 import { readState } from "./state.ts";
 
 const MAX_BODY = 64 * 1024;
@@ -64,6 +64,32 @@ export const sendJson = (response: ServerResponse, status: number, body: unknown
   response.end(JSON.stringify(body));
 };
 
+const readForm = async (request: IncomingMessage) => {
+  const chunks: Array<Buffer> = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    if (size > 4096) throw new WatchError("Request too large", 413);
+    chunks.push(chunk as Buffer);
+  }
+  return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+};
+
+/** The page a sign-in link opens: one button that posts the code. The code is URL-safe base64. */
+const signInPage = (code: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to Watch</title>
+<style>
+body { font: 15px/1.5 system-ui, sans-serif; max-width: 28rem; margin: 15vh auto; padding: 0 1.25rem; color: #0a0a0a; background: #fff; }
+p { color: #737373; }
+button { font: inherit; padding: .5rem 1.1rem; border: 0; border-radius: .6rem; background: #171717; color: #fafafa; cursor: pointer; }
+@media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #fafafa; } button { background: #fafafa; color: #0a0a0a; } }
+</style></head>
+<body><h1>Sign in to Watch</h1><p>This link works once, within 10 minutes.</p>
+<form method="post" action="/signin"><input type="hidden" name="code" value="${code}"><button type="submit">Sign in</button></form>
+</body></html>
+`;
+
 export const readJson = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
   const chunks: Array<Buffer> = [];
   let size = 0;
@@ -114,13 +140,30 @@ export const makeHttpServer = (options: {
   };
 
   // Only one-time codes sign a browser in; a link carrying the access token is never accepted.
-  const signin: Route = async (_request, response, url) => {
+  // Opening a link shows a button whose POST spends the code, so a chat or mail preview that
+  // fetches the link cannot use it up.
+  const signin: Route = async (request, response, url) => {
     if (url.pathname !== "/signin") return false;
-    if (!useSignInCode(watch.store, url.searchParams.get("code") ?? "", watch.deps.now())) {
-      response.writeHead(401, { "content-type": "text/plain" });
+    const refuse = () => {
+      response.writeHead(401, { "content-type": "text/plain", "cache-control": "no-store" });
       response.end("This sign-in link is not valid, was already used or is older than 10 minutes. Run t3-watch url for a new one.");
       return true;
+    };
+    if (request.method === "GET" || request.method === "HEAD") {
+      const code = url.searchParams.get("code") ?? "";
+      if (!isSignInCodeShape(code)) return refuse();
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      });
+      response.end(signInPage(code));
+      return true;
     }
+    if (request.method !== "POST") return false;
+    const form = await readForm(request);
+    if (!useSignInCode(watch.store, form.get("code") ?? "", watch.deps.now())) return refuse();
     const token = options.config().token;
     const secure = (options.config().publicUrl ?? "").startsWith("https:") ? "; Secure" : "";
     response.writeHead(302, {
