@@ -52,7 +52,7 @@
 - [x] 4.12 `src/server/cli.test.ts`: the probe's nothing-listening case waits for its port to close.
 - [x] 4.13 `src/server/http.ts`, `src/server/http.test.ts`: a press counts as from the page when the
       browser says same-origin, so Origin: null or a rewritten Host does not lock anyone out.
-- [ ] 4.14 `src/server/http.ts`: the form limit is a named constant beside the JSON one.
+- [x] 4.14 `src/server/http.ts`: the form limit is a named constant beside the JSON one.
 
 ## 5. Verification
 

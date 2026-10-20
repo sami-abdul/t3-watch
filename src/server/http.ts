@@ -10,6 +10,8 @@ import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
 
 const MAX_BODY = 64 * 1024;
+/** A sign-in form holds one short code. */
+const MAX_FORM = 4096;
 const COOKIE = "t3w";
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -84,7 +86,7 @@ const readBody = async (request: IncomingMessage, limit: number) => {
   return Buffer.concat(chunks);
 };
 
-const readForm = async (request: IncomingMessage) => new URLSearchParams((await readBody(request, 4096)).toString("utf8"));
+const readForm = async (request: IncomingMessage) => new URLSearchParams((await readBody(request, MAX_FORM)).toString("utf8"));
 
 /** The page a sign-in link opens: one button that posts the code. The code is URL-safe base64. */
 const signInPage = (code: string) => `<!doctype html>
