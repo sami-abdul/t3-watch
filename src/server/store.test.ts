@@ -23,7 +23,7 @@ describe("store", () => {
       const store = openStore(file);
       expect(store.check("c")).toMatchObject({ lastOutcome: "pass", pending: null });
       store.recordPending("c", { outcome: "fail", summary: "Answered 500", evidence: {} }, "2026-10-15T10:01:00Z", 1, "2026-10-15T10:02:00Z");
-      expect(store.check("c")!.pending).toBe("fail");
+      expect(store.check("c")!.pending).toMatchObject({ outcome: "fail" });
       store.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

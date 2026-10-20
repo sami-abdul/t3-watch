@@ -78,6 +78,15 @@
 - [x] 6.8 `src/server/store.ts`, `src/server/state.ts`, `src/web/Home.tsx`,
       `src/server/runner.test.ts`: pending runs and checks read "Failed once, checking again" in
       the history, the status and on Home.
+- [x] 6.9 `src/server/runner.ts`, `src/server/runner.test.ts`: a pause, snooze or new definition
+      made during the probe wins over the run.
+- [x] 6.10 `src/server/store.ts`, `src/server/store.test.ts`, `src/server/runner.test.ts`: a new key
+      clears a pending run, the column migration survives another process adding it first, and
+      `recordRun` reads the pending run from the check.
+- [x] 6.11 `src/server/pending.ts`, `src/server/store.ts`, `src/server/state.ts`,
+      `src/server/mcp.ts`, `src/web/Home.tsx`, `src/web/logic.test.ts`, `src/server/runner.test.ts`:
+      the pending run keeps its outcome, summary and time, worded by outcome in one place, and
+      shows in the history, the status, Home and the check's reply.
 - [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance, a check that fails once and then passes makes no event, and one that
       fails twice in a row makes one.

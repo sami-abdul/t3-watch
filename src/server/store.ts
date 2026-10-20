@@ -1,5 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
+import { type PendingRun, pendingText } from "./pending.ts";
+
 export type Outcome = "pass" | "fail" | "unknown";
 
 /** Whether recording an outcome changes a check's state and so makes an event: a first run only when it fails. */
@@ -39,8 +41,8 @@ export interface Check {
   readonly lastRunAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
-  /** The outcome of a non-passing run waiting for a second one before the check fails, or null. */
-  readonly pending?: Outcome | null;
+  /** A non-passing run waiting for a second one before the check fails, or null. */
+  readonly pending: PendingRun | null;
 }
 export interface Run {
   readonly id: number;
@@ -139,6 +141,16 @@ const toService = (r: Row): Service => ({
   foundIn: parse(r.found_in, []),
   updatedAt: String(r.updated_at),
 });
+/** The stored pending run, or null when there is none or it does not parse. */
+const readPending = (value: unknown): PendingRun | null => {
+  try {
+    const pending = parse<PendingRun | null>(value, null);
+    return pending !== null && typeof pending === "object" && typeof pending.outcome === "string" ? pending : null;
+  } catch {
+    return null;
+  }
+};
+
 const toCheck = (r: Row): Check => ({
   id: String(r.id),
   serviceId: String(r.service_id),
@@ -156,7 +168,7 @@ const toCheck = (r: Row): Check => ({
   lastRunAt: str(r.last_run_at),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
-  pending: str(r.pending) as Outcome | null,
+  pending: readPending(r.pending),
 });
 const toRun = (r: Row): Run => ({
   id: Number(r.id),
@@ -199,7 +211,12 @@ export const openStore = (file: string) => {
   db.exec(SCHEMA);
   // Columns added after a database was first made.
   if (!(db.prepare("PRAGMA table_info(checks)").all() as Array<Row>).some((column) => column.name === "pending"))
-    db.exec("ALTER TABLE checks ADD COLUMN pending TEXT");
+    try {
+      db.exec("ALTER TABLE checks ADD COLUMN pending TEXT");
+    } catch (error) {
+      // Another process opening the same file added it first.
+      if (!String(error).includes("duplicate column name")) throw error;
+    }
   const all = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).all(...params) as Array<Row>;
   const one = (sql: string, ...params: Array<string | number | null>) =>
@@ -280,7 +297,8 @@ export const openStore = (file: string) => {
       return row === undefined ? null : toCheck(row);
     },
     /** Inserts or replaces a check's definition, keeping its run state. */
-    upsertCheck: (c: Check) =>
+    /** Writes a check's definition and state. A pending run survives only the same kind, config and key. */
+    upsertCheck: (c: Omit<Check, "pending">) =>
       exec(
         `INSERT INTO checks (id, service_id, kind, intent, config, key_id, cadence_seconds, state,
            snoozed_until, next_run_at, origin, last_outcome, last_summary, last_run_at, created_at,
@@ -291,7 +309,8 @@ export const openStore = (file: string) => {
            cadence_seconds = excluded.cadence_seconds, state = excluded.state,
            snoozed_until = excluded.snoozed_until, next_run_at = excluded.next_run_at,
            updated_at = excluded.updated_at,
-           pending = CASE WHEN kind = excluded.kind AND config = excluded.config THEN pending ELSE NULL END`,
+           pending = CASE WHEN kind = excluded.kind AND config = excluded.config AND key_id IS excluded.key_id
+             THEN pending ELSE NULL END`,
         c.id,
         c.serviceId,
         c.kind,
@@ -345,7 +364,6 @@ export const openStore = (file: string) => {
       at: string,
       durationMs: number,
       nextRunAt: string,
-      pending: Outcome | null = null,
     ): ChangeEvent | null => {
       addRun(check.id, at, result.outcome, result.summary, result.evidence, durationMs);
       exec(
@@ -360,8 +378,9 @@ export const openStore = (file: string) => {
         check.id,
       );
       const previous = check.lastOutcome;
-      // A pending failure confirmed by a run that could not run still leaves passing behind.
-      const confirmsFailure = pending === "fail" && result.outcome !== "pass";
+      // A new check has no state to leave, so a run that could not run would make no event; when it
+      // confirms a pending failure, the person still hears of it, as they would have of the failure.
+      const confirmsFailure = check.pending?.outcome === "fail" && result.outcome !== "pass";
       if (!changesState(previous, result.outcome) && !confirmsFailure) return null;
       const info = exec(
         "INSERT INTO events (check_id, at, from_outcome, to_outcome, summary) VALUES (?, ?, ?, ?, ?)",
@@ -398,9 +417,9 @@ export const openStore = (file: string) => {
       durationMs: number,
       nextRunAt: string,
     ) => {
-      const summary = `Failed once, checking again: ${result.summary}`.slice(0, 300);
-      setAside(checkId, at, result.outcome, summary, { ...result.evidence, pending: true }, durationMs, nextRunAt);
-      exec("UPDATE checks SET pending = ? WHERE id = ?", result.outcome, checkId);
+      const summary = `${pendingText(result.outcome)}: ${result.summary}`.slice(0, 300);
+      setAside(checkId, at, result.outcome, summary, result.evidence, durationMs, nextRunAt);
+      exec("UPDATE checks SET pending = ? WHERE id = ?", json({ outcome: result.outcome, summary: result.summary, at }), checkId);
     },
     /**
      * How many held runs a check has had since its last run recorded while Watch was online. A run

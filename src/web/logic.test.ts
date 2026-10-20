@@ -35,7 +35,7 @@ const scan: Scan = {
 };
 
 const check = (over: Partial<CheckView>): CheckView => ({
-  id: "c", serviceId: "s", kind: "http", intent: "i", config: {}, keyId: null, cadenceSeconds: 60, state: "on",
+  id: "c", serviceId: "s", kind: "http", intent: "i", config: {}, keyId: null, cadenceSeconds: 60, state: "on", pending: null,
   snoozedUntil: null, nextRunAt: null, origin: "scan", lastOutcome: "pass", lastSummary: null, lastRunAt: null,
   createdAt: "", updatedAt: "", serviceLabel: "S", note: null, pingPath: null, ...over,
 });

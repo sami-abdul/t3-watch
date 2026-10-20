@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { pendingText } from "../server/pending.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import type { WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
@@ -154,7 +155,10 @@ export function Home({
               rows={[...model.passing, ...model.waiting].map((check) => ({
                 key: check.id,
                 title: `${check.serviceLabel}: ${check.intent}`,
-                detail: `${(check.pending ?? null) !== null ? "Failed once, checking again" : (check.lastSummary ?? "Waiting for its first run")} · ${ago(check.lastRunAt, now)}`,
+                detail:
+                  check.pending !== null
+                    ? `${pendingText(check.pending.outcome)}: ${check.pending.summary} · ${ago(check.pending.at, now)}`
+                    : `${check.lastSummary ?? "Waiting for its first run"} · ${ago(check.lastRunAt, now)}`,
                 badge: check.lastOutcome === null ? null : outcomeTone[check.lastOutcome],
               }))}
             />

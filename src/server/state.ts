@@ -1,6 +1,7 @@
 import { alertSettings } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
+import { pendingText } from "./pending.ts";
 import type { Check } from "./store.ts";
 
 export interface CheckView extends Check {
@@ -74,9 +75,13 @@ export const homeText = (state: WatchState) => {
     );
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));
-  const checkingAgain = on.filter((c) => (c.pending ?? null) !== null);
+  const checkingAgain = on.filter((c) => c.pending !== null);
   if (checkingAgain.length > 0)
-    lines.push("", "Failed once, checking again:", ...checkingAgain.map((c) => `- ${c.serviceLabel}: ${c.intent} (${c.id})`));
+    lines.push(
+      "",
+      "Checking again after one bad run:",
+      ...checkingAgain.map((c) => `- ${c.serviceLabel}: ${c.intent} (${c.id}): ${pendingText(c.pending!.outcome)}: ${c.pending!.summary}`),
+    );
   if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
   if (state.vendorDrafts.length > 0)
     lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => String(d.description.label ?? d.id)).join(", ")}`);

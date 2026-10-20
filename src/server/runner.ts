@@ -31,6 +31,8 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         if (provesInternet(fresh, context.vendors())) link.sawInternet();
       } else if (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline())) {
         const offline = await link.hold();
+        // A pause, snooze or new definition made during the probe wins over this run.
+        if (context.store.check(fresh.id)?.updatedAt !== fresh.updatedAt) return result;
         const capped = context.store.heldStreak(fresh.id) >= Math.ceil(MAX_HOLD_MS / 1000 / fresh.cadenceSeconds);
         if (offline && !capped) {
           context.store.recordHeld(fresh.id, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
@@ -43,7 +45,7 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       // history with no new state, and run again within a minute. The next run that is not held,
       // whenever it comes, confirms or clears it, so only two non-passing runs in a row fail the
       // check and alert, and one dropped request on a lossy link does not.
-      if (!manual && recorded.outcome !== "pass" && (fresh.lastOutcome ?? "pass") === "pass" && (fresh.pending ?? null) === null) {
+      if (!manual && recorded.outcome !== "pass" && (fresh.lastOutcome ?? "pass") === "pass" && fresh.pending === null) {
         const again = new Date(finished.getTime() + Math.min(fresh.cadenceSeconds, CONFIRM_SECONDS) * 1000).toISOString();
         context.store.recordPending(fresh.id, recorded, finished.toISOString(), finished.getTime() - started.getTime(), again);
         return result;
@@ -54,7 +56,6 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         finished.toISOString(),
         finished.getTime() - started.getTime(),
         nextRunAt,
-        fresh.pending ?? null,
       );
       if (event !== null) onEvent(event);
       return result;

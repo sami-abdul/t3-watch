@@ -12,6 +12,7 @@ import { z } from "zod";
 import { alertSettings, setAlerts } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
 import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "./drafts.ts";
+import { pendingText } from "./pending.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import { homeText, readState } from "./state.ts";
 
@@ -184,7 +185,7 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
     },
     safely(async ({ checkId, action, until }: { checkId: string; action: "on" | "pause" | "resume" | "snooze" | "run"; until?: string }) => {
       const check = await watch.setCheck(checkId, action, until);
-      return text(`${check.intent}: ${check.state}${check.snoozedUntil ? ` until ${check.snoozedUntil}` : ""}. Last result: ${check.lastSummary ?? "none yet"}`);
+      return text(`${check.intent}: ${check.state}${check.snoozedUntil ? ` until ${check.snoozedUntil}` : ""}. Last result: ${check.lastSummary ?? "none yet"}${check.pending === null ? "" : `. ${pendingText(check.pending.outcome)}: ${check.pending.summary}`}`);
     }),
   );
 
