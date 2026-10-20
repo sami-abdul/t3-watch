@@ -19,9 +19,22 @@
 
 - [x] 3.1 `README.md`: what Watch does when its own link is down, and `probeUrls`.
 
-## 4. Verification
+## 4. Review follow-ups
 
-- [ ] 4.1 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`.
-- [ ] 4.2 On a throwaway instance whose probe addresses are unreachable: a failing check is held
+- [ ] 4.1 `src/server/config.ts`, `src/server/connectivity.ts`, `src/server/connectivity.test.ts`:
+      one loopback helper for both files; checks on the local network, the tailnet or `.local`
+      names need no internet, so they are never held and never vouch for the link.
+- [ ] 4.2 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/runner.ts`,
+      `src/server/app.ts`: every failure probes, with answers reused for 15 seconds; the link state
+      lives in memory, a pass outranks a probe that began before it, and offline lapses 30 minutes
+      after the last failed probe.
+- [ ] 4.3 `src/server/connectivity.ts`, `src/server/config.ts`, `src/server/state.ts`,
+      `src/web/Home.tsx`, `src/server/chat.test.ts`: probe addresses must parse; holding stops
+      after an hour offline, and the notice says so.
+
+## 5. Verification
+
+- [ ] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`.
+- [ ] 5.2 On a throwaway instance whose probe addresses are unreachable: a failing check is held
       with no event, and the page shows the notice; with the probe answering, the same failure
       makes an event.

@@ -3,14 +3,15 @@
 ### Requirement: Hold failures while Watch is offline
 
 When a check that needs the internet does not pass, Watch SHALL decide whether it can reach the
-internet before recording the result. It SHALL count itself online when another check that needs
-the internet passed in the last 2 minutes, and otherwise SHALL probe its probe addresses, counting
-any answer within 5 seconds as online. A probe's answer SHALL be reused for 60 seconds, and checks
-that fail at the same time SHALL share one probe. While Watch is offline, such a result SHALL be
+internet before recording the result, by probing its probe addresses and counting any answer
+within 5 seconds as online. A probe's answer SHALL be reused for 15 seconds, so checks that fail
+together share one probe, and a check that passes after a probe began SHALL outrank that probe. While Watch is offline, such a result SHALL be
 held: the run SHALL be kept in the check's history marked as held, the check SHALL keep its last
-result, and no change event or alert SHALL be made. HTTP checks on localhost or a loopback address
-and heartbeat checks SHALL never be held. Watch SHALL store when it went offline and SHALL count
-itself online again when a probe answers or a check that needs the internet passes.
+result, and no change event or alert SHALL be made. HTTP checks on this machine, the local
+network or the tailnet, and heartbeat checks, SHALL never be held. Watch SHALL remember when it
+went offline and SHALL count itself online again when a probe answers, when a check that needs the
+internet passes, or 30 minutes after its last failed probe. Once Watch has been offline for an
+hour it SHALL stop holding and record failures as usual.
 
 #### Scenario: The link is down
 
@@ -23,6 +24,11 @@ itself online again when a probe answers or a check that needs the internet pass
 - **WHEN** a passing HTTP check fails and a probe address answers
 - **THEN** the check fails and a change event is made, as before
 
+#### Scenario: Offline for over an hour
+
+- **WHEN** Watch has counted itself offline for more than an hour and a check fails
+- **THEN** the failure is recorded and makes an event, as if Watch were online
+
 #### Scenario: A heartbeat while offline
 
 - **WHEN** a heartbeat check goes stale while Watch is offline
@@ -32,7 +38,7 @@ itself online again when a probe answers or a check that needs the internet pass
 
 Watch SHALL probe `https://www.gstatic.com/generate_204` and
 `https://one.one.one.one/cdn-cgi/trace` unless `config.json` holds a `probeUrls` list of http or
-https addresses, which it SHALL probe instead. An empty list SHALL turn holding off. Watch SHALL
+https addresses that parse, which it SHALL probe instead. An empty list SHALL turn holding off. Watch SHALL
 NOT write `probeUrls` into `config.json` unless someone set it there.
 
 #### Scenario: A network that blocks the defaults

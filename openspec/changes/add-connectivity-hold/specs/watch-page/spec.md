@@ -3,7 +3,8 @@
 ### Requirement: Offline notice
 
 While Watch counts itself offline, Home SHALL say since when it cannot reach the internet, that
-checks which need it are on hold, and that nothing alerts until the link is back.
+checks which need it are on hold, and that nothing alerts until the link is back. After an hour
+offline it SHALL say instead that failures are recorded again.
 
 #### Scenario: Watch loses its link
 
