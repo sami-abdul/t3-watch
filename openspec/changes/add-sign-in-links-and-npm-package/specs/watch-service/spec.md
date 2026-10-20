@@ -21,8 +21,9 @@ unknown code and SHALL NOT accept the access token.
 
 Opening a sign-in link SHALL show a Sign in button, and only its POST SHALL use the code, so a
 link preview cannot spend it. A used code SHALL give the browser its own random session, stored as
-a hash, never the access token. `t3-watch signout` SHALL end every browser session without
-changing the access token.
+a hash, never the access token, and ending 90 days after sign-in. A link whose code is spent or
+expired SHALL be refused before the button shows, and a press SHALL come from the page's own
+origin. `t3-watch signout` SHALL end every browser session without changing the access token.
 
 #### Scenario: A chat previews the link
 
