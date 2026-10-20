@@ -68,8 +68,8 @@ internet at all. If neither `https://www.gstatic.com/generate_204` nor
 `https://one.one.one.one/cdn-cgi/trace` answers within 5 seconds, it holds the result: the run
 shows in the check's history as held, the check keeps its last result, and nothing alerts. Home
 and the Watch thread's status say when Watch lost its connection. Heartbeats and checks on this
-machine, the local network or the tailnet are never held. After an hour offline Watch records
-failures again, in case the probe addresses are what is blocked.
+machine are never held, and a check's failures are held at most an hour in a row, in case the
+probe addresses are what is blocked.
 
 If your network blocks those two addresses, list ones it allows as `probeUrls` in
 `~/.t3-watch/config.json` and restart Watch. An empty list turns holding off.

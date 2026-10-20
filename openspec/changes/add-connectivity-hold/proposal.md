@@ -14,11 +14,12 @@ wolf, and the alerts cannot even leave the machine while the link is down.
 - **While Watch is offline, those failures are held.** The run is kept in the check's history,
   marked as held, but the check keeps its last result, nothing changes state, and no event or
   alert is made. The check runs again at its normal cadence.
-- **Which checks need the internet:** HTTP checks, except those on this machine, the local
-  network or the tailnet, and GitHub, AWS and vendor checks. Heartbeats are never held.
-- **Holding has limits.** After an hour offline Watch records failures again, so a wrong probe
-  list cannot hide them for good, and it stops counting itself offline 30 minutes after its last
-  failed probe.
+- **Which checks are held:** every check except heartbeats and HTTP checks on this machine.
+  Only a pass from a check that reaches the internet proves the link; a pass on the local network
+  or the tailnet does not. Watch probes only for a result that would change a check's state.
+- **Holding has limits.** A check's failures are held at most an hour in a row, counted from its
+  runs, so a wrong probe list or a restart cannot hide them for good, and Watch stops counting
+  itself offline 30 minutes after its last failed probe.
 - **People can see it.** Watch remembers when it went offline. Home and the text status say so
   until a probe answers or a check that needs the internet passes.
 - **The probe addresses can be changed** with `probeUrls` in `config.json`, for networks that block
