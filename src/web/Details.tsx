@@ -60,7 +60,12 @@ export function Details({
   const [makingSecret, setMakingSecret] = useState(false);
   // Replacing a secret while alerts are on stops them until the T3 task has the new one.
   const [confirmReplace, setConfirmReplace] = useState(false);
-  const replacing = confirmReplace && state.alerts.url !== null && state.alerts.signed;
+  const alertsOn = state.alerts.url !== null && state.alerts.signed;
+  // Reset rather than hide, so the prompt is not already armed when alerts come back.
+  useEffect(() => {
+    if (!alertsOn) setConfirmReplace(false);
+  }, [alertsOn]);
+  const replacing = confirmReplace && alertsOn;
   const [rootsError, setRootsError] = useState<string | null>(null);
   // Tries again on every refresh until the folder list loads.
   useEffect(() => {
@@ -193,7 +198,7 @@ export function Details({
               variant="secondary"
               loading={makingSecret}
               onClick={async () => {
-                if (state.alerts.url !== null && state.alerts.signed && !replacing) {
+                if (alertsOn && !replacing) {
                   setConfirmReplace(true);
                   return;
                 }
