@@ -25,6 +25,9 @@ to detect: the probes still answer, so a single dropped request still reads as a
   until a probe answers or a check that needs the internet passes.
 - **One bad run does not alert.** A check that was passing fails only when two runs in a row do
   not pass; the second runs within a minute of the first, and a pass counts at once.
+- **A probe list that disagrees is flagged.** If the probe addresses fail twice in an hour right
+  after a check reached the internet, Watch stops trusting them, records failures as usual and
+  says so on Home, pointing at `probeUrls`.
 - **The probe addresses can be changed** with `probeUrls` in `config.json`, for networks that block
   the defaults; an empty list turns holding off.
 

@@ -90,3 +90,23 @@ again.
 
 - **WHEN** a failing check passes once
 - **THEN** it passes at once and an event is made
+
+### Requirement: A probe list that disagrees
+
+When a check that reaches the internet passes while Watch counts itself offline, Watch SHALL probe
+again at once, and SHALL count a disagreement when no probe address answers. With two
+disagreements in the last hour, Watch SHALL treat its probe list as wrong: it SHALL NOT hold
+failures or count itself offline, and Home and the text status SHALL say the probe addresses do
+not answer while checks that need the internet pass, and point at `probeUrls`. A probe that
+answers SHALL clear the disagreements.
+
+#### Scenario: A network that blocks the probe addresses
+
+- **WHEN** the probe addresses keep failing while a check on a public site keeps passing
+- **THEN** after the second disagreement Watch stops holding, a failing check fails as usual, and
+  Home names `probeUrls`
+
+#### Scenario: An outage that ends
+
+- **WHEN** Watch was offline and the link comes back, so a check passes and the fresh probe answers
+- **THEN** no disagreement is counted
