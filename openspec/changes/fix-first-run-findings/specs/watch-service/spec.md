@@ -12,8 +12,10 @@ when Watch listens on all interfaces.
 
 ### Requirement: Sign-in token stays out of logs
 
-`t3-watch start` and `t3-watch install` SHALL print the sign-in link, which carries the access
-token, only when standard output is a terminal. Otherwise they SHALL say to run `t3-watch url`.
+`t3-watch start` SHALL print the sign-in link, which carries the access token, only when
+standard output is a terminal, and otherwise SHALL say to run `t3-watch url`. `t3-watch install`
+SHALL NOT print the link, because agents run it and some agent shells are terminals; it SHALL
+say how to get the link instead.
 
 #### Scenario: Started by systemd
 
@@ -22,9 +24,10 @@ token, only when standard output is a terminal. Otherwise they SHALL say to run 
 
 ### Requirement: GitHub freshness
 
-A `github` check MAY set `maxAgeSeconds`. When set, the check SHALL also fail when the newest
-successful run in its scope started longer ago than that, or when there is no successful run in
-the runs it reads, naming how old the newest success is.
+A `github` check that names a `workflow` MAY set `maxAgeSeconds`; one without a workflow SHALL
+be refused, so another workflow's success cannot hide a stalled schedule. When set, the check
+SHALL also fail when the workflow's newest successful run started longer ago than that, naming
+how old it is.
 
 #### Scenario: A scheduled workflow GitHub skipped
 

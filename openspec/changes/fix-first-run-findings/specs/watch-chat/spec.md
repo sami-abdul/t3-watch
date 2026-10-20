@@ -13,8 +13,10 @@ intent and the summary, so an intent phrased as the healthy state still reads co
 
 ### Requirement: Alert secret never passes through chat
 
-Watch SHALL make the alert signing secret itself, from the page, and show it once there.
-`watch_set_alerts` SHALL refuse a secret. The agent instructions SHALL have the agent collect the
+Watch SHALL make the alert signing secret itself, from the page, and show it once there. The
+route that makes it SHALL accept only the page's signed-in session from the page's own origin,
+not the API token. `watch_set_alerts` SHALL refuse a secret and SHALL read a null secret as none
+given. The agent instructions SHALL have the agent collect the
 secret through the host's private secret prompt and attach it to the webhook task by reference,
 and SHALL NOT have the agent generate, hold or repeat the secret.
 

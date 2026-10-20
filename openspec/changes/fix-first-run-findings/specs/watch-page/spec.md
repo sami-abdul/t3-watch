@@ -23,7 +23,8 @@ the person to copy.
 
 The Alerts section on the page SHALL offer Make a signing secret. Pressing it SHALL store a new
 random secret, replacing any earlier one, and show it once with a note that alerts fail until the
-same secret is pasted into the T3 task. The chat view SHALL NOT offer it.
+same secret is pasted into the T3 task. While alerts are on, replacing the secret SHALL ask for a
+second press first. The chat view SHALL NOT offer it.
 
 #### Scenario: Making a secret
 
@@ -33,6 +34,7 @@ same secret is pasted into the T3 task. The chat view SHALL NOT offer it.
 ### Requirement: Folder list shows configured folders
 
 The folder list under Details SHALL show the folders in the config, before and after any scan.
+When the config cannot be read, it SHALL say so and SHALL NOT offer the last scan's folders.
 
 #### Scenario: Folders changed after a scan
 

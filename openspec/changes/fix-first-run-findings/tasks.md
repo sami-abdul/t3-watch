@@ -7,7 +7,7 @@
 ## 2. Page
 
 - [x] 2.1 `src/web/ui.tsx`: drop the `m-0` resets that cancel `space-y-*`.
-- [x] 2.2 `src/web/client.ts`, `src/web/Home.tsx`: Ask why falls back to showing the question.
+- [x] 2.2 `src/web/client.ts`: Ask why falls back to showing the question.
 - [x] 2.3 `src/web/client.ts`, `src/web/Details.tsx`, `src/web/app-entry.tsx`: the folder list
       reads `/api/settings`.
 
@@ -27,11 +27,28 @@
 - [x] 4.1 `src/server/checks/github.ts`, `src/server/mcp.ts`, `README.md`: `maxAgeSeconds` on
       `github` checks.
 
-## 5. Verification
+## 5. Review follow-ups
 
-- [ ] 5.1 Tests for each server change in `src/server/config.test.ts`, `src/server/chat.test.ts`,
+- [ ] 5.1 `src/server/checks/github.ts`, `src/server/checks.test.ts`, `src/server/mcp.ts`,
+      `README.md`: `maxAgeSeconds` needs `workflow`, so another workflow's success cannot hide a
+      stalled schedule.
+- [ ] 5.2 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_set_alerts` reads `secret: null`
+      as no secret.
+- [ ] 5.3 `src/web/Details.tsx`: replacing a secret while alerts are on asks first.
+- [ ] 5.4 `src/server/cli.ts`, `src/server/mcp.ts`, `README.md`: `install` never prints the token;
+      the agent instructions say never to fetch the sign-in link.
+- [ ] 5.5 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the secret
+      route takes only the page's signed-in session from the page's own origin.
+- [ ] 5.6 `src/server/config.ts`, `src/server/config.test.ts`: `localUrl` accepts a bracketed
+      IPv6 host.
+- [ ] 5.7 `src/web/Details.tsx`: the folder list shows a load error instead of falling back.
+- [ ] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.
+
+## 6. Verification
+
+- [ ] 6.1 Tests for each server change in `src/server/config.test.ts`, `src/server/chat.test.ts`,
       `src/server/scan.test.ts` and `src/server/checks.test.ts`; `pnpm test`.
-- [ ] 5.2 `pnpm typecheck`; `pnpm build`; `openspec validate fix-first-run-findings --strict`.
-- [ ] 5.3 On a running install: `t3-watch status` with a non-loopback host, the page in a
+- [ ] 6.2 `pnpm typecheck`; `pnpm build`; `openspec validate fix-first-run-findings --strict`.
+- [ ] 6.3 On a running install: `t3-watch status` with a non-loopback host, the page in a
       browser, Make a signing secret, and a GitHub check with `maxAgeSeconds` against a real
       scheduled workflow.
