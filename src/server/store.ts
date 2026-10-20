@@ -195,6 +195,24 @@ export const openStore = (file: string) => {
     db.prepare(sql).get(...params) as Row | undefined;
   const exec = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).run(...params);
+  /** Keeps a run in a check's history, which holds its newest 200. */
+  const addRun = (checkId: string, at: string, outcome: Outcome, summary: string, evidence: Record<string, unknown>, durationMs: number) => {
+    exec(
+      "INSERT INTO runs (check_id, at, outcome, summary, evidence, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
+      checkId,
+      at,
+      outcome,
+      summary,
+      json(evidence),
+      durationMs,
+    );
+    exec(
+      `DELETE FROM runs WHERE check_id = ? AND id NOT IN
+         (SELECT id FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 200)`,
+      checkId,
+      checkId,
+    );
+  };
 
   return {
     close: () => db.close(),
@@ -303,15 +321,7 @@ export const openStore = (file: string) => {
       durationMs: number,
       nextRunAt: string,
     ): ChangeEvent | null => {
-      exec(
-        "INSERT INTO runs (check_id, at, outcome, summary, evidence, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
-        check.id,
-        at,
-        result.outcome,
-        result.summary,
-        json(result.evidence),
-        durationMs,
-      );
+      addRun(check.id, at, result.outcome, result.summary, result.evidence, durationMs);
       exec(
         `UPDATE checks SET last_outcome = ?, last_summary = ?, last_run_at = ?, next_run_at = ?,
            snoozed_until = CASE WHEN snoozed_until IS NOT NULL AND snoozed_until <= ? THEN NULL ELSE snoozed_until END
@@ -321,12 +331,6 @@ export const openStore = (file: string) => {
         at,
         nextRunAt,
         at,
-        check.id,
-      );
-      exec(
-        `DELETE FROM runs WHERE check_id = ? AND id NOT IN
-           (SELECT id FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 200)`,
-        check.id,
         check.id,
       );
       const previous = check.lastOutcome;
@@ -341,6 +345,21 @@ export const openStore = (file: string) => {
         result.summary,
       );
       return toEvent(one("SELECT * FROM events WHERE id = ?", Number(info.lastInsertRowid))!);
+    },
+    /**
+     * Keeps a run Watch held while it could not reach the internet. The check keeps its last
+     * result and no event is made; only its next run time moves.
+     */
+    recordHeld: (
+      check: Check,
+      result: { outcome: Outcome; summary: string; evidence: Record<string, unknown> },
+      at: string,
+      durationMs: number,
+      nextRunAt: string,
+    ) => {
+      const summary = `Held while Watch could not reach the internet: ${result.summary}`.slice(0, 300);
+      addRun(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs);
+      exec("UPDATE checks SET next_run_at = ? WHERE id = ?", nextRunAt, check.id);
     },
     /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
     setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>

@@ -40,4 +40,6 @@ export const fakeDeps = (options: {
 export const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-export const testWatch = (deps: Deps) => makeWatch({ home: null, dbFile: ":memory:", deps });
+/** A Watch on an in-memory database. Holding is off unless a test passes probe addresses. */
+export const testWatch = (deps: Deps, probeUrls: () => unknown = () => []) =>
+  makeWatch({ home: null, dbFile: ":memory:", deps, probeUrls });

@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { CheckContext } from "./checks/index.ts";
+import { makeConnectivity } from "./connectivity.ts";
 import { openKeyring } from "./keys.ts";
 import type { Deps } from "./proc.ts";
 import { makeRunner } from "./runner.ts";
@@ -31,6 +32,8 @@ interface WatchOptions {
   readonly catalogDir?: string;
   /** Folders whose repositories setup scans. */
   readonly roots?: () => ReadonlyArray<string>;
+  /** The probeUrls setting, read on each probe; missing means the default addresses. */
+  readonly probeUrls?: () => unknown;
 }
 
 const makeCore = (options: WatchOptions) => {
@@ -45,9 +48,14 @@ const makeCore = (options: WatchOptions) => {
   reloadCatalog();
   const listeners = new Set<(event: ChangeEvent) => void>();
   const context: CheckContext = { deps: options.deps, store, keyring, vendors: () => catalog };
-  const runner = makeRunner(context, (event) => {
-    for (const listener of listeners) listener(event);
-  });
+  const connectivity = makeConnectivity(options.deps, store, options.probeUrls);
+  const runner = makeRunner(
+    context,
+    (event) => {
+      for (const listener of listeners) listener(event);
+    },
+    connectivity,
+  );
 
   const requireCheck = (id: string) => {
     const check = store.check(id);
@@ -127,6 +135,7 @@ const makeCore = (options: WatchOptions) => {
     store,
     keyring,
     runner,
+    link: connectivity.link,
     deps: options.deps,
     now,
     vendors: () => catalog,

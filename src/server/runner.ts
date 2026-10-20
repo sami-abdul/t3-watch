@@ -1,10 +1,11 @@
 import { type CheckContext, runCheck } from "./checks/index.ts";
+import { type Connectivity, needsInternet } from "./connectivity.ts";
 import type { ChangeEvent, Check } from "./store.ts";
 
 const CONCURRENCY = 4;
 
 /** Runs due checks on a clock. Each check runs at most once at a time. */
-export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) => void) => {
+export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) => void, link: Connectivity) => {
   const running = new Set<string>();
   let timer: NodeJS.Timeout | null = null;
 
@@ -18,6 +19,15 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       const fresh = context.store.check(check.id);
       if (fresh === null) return null;
       const nextRunAt = new Date(finished.getTime() + fresh.cadenceSeconds * 1000).toISOString();
+      // When a check that needs the internet does not pass, Watch's own link may be what is down.
+      // Then the result is held: kept in the history, with no new state and no event.
+      if (needsInternet(fresh)) {
+        if (result.outcome === "pass") link.sawInternet();
+        else if (!(await link.online())) {
+          context.store.recordHeld(fresh, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
+          return result;
+        }
+      }
       const event = context.store.recordRun(
         fresh,
         result,

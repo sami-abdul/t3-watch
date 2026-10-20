@@ -2,7 +2,6 @@
  * Whether Watch itself can reach the internet. When its own link drops, every check that needs the
  * internet fails at once; Watch holds those results instead of alerting on each of them.
  */
-import type { WatchConfig } from "./config.ts";
 import type { Deps } from "./proc.ts";
 import type { Check, Store } from "./store.ts";
 
@@ -32,15 +31,14 @@ export const needsInternet = (check: Pick<Check, "kind" | "config">) => {
   return !LOOPBACK.test(host) && !host.endsWith(".localhost");
 };
 
-/** The configured probe addresses, or the defaults when the setting is missing or malformed. */
-export const probeUrls = (config: WatchConfig): ReadonlyArray<string> => {
-  const set = config.probeUrls;
-  return Array.isArray(set) && set.every((url) => typeof url === "string" && /^https?:\/\//.test(url))
-    ? set
+/** The probeUrls setting as a list, or the defaults when it is missing or malformed. */
+export const probeUrls = (setting: unknown): ReadonlyArray<string> =>
+  Array.isArray(setting) && setting.every((url) => typeof url === "string" && /^https?:\/\//.test(url))
+    ? setting
     : DEFAULT_PROBE_URLS;
-};
 
-export const makeConnectivity = (deps: Deps, store: Store, config: () => WatchConfig) => {
+/** `setting` is read on each probe, so a reloaded config applies without a restart. */
+export const makeConnectivity = (deps: Deps, store: Store, setting: () => unknown = () => undefined) => {
   let lastPassAt = Number.NEGATIVE_INFINITY;
   let probe: { readonly at: number; readonly answer: Promise<boolean> } | null = null;
 
@@ -79,7 +77,7 @@ export const makeConnectivity = (deps: Deps, store: Store, config: () => WatchCo
       const now = deps.now().getTime();
       if (now - lastPassAt <= RECENT_PASS_MS) return Promise.resolve(true);
       if (probe === null || now - probe.at > PROBE_REUSE_MS) {
-        const answer = reach(probeUrls(config())).then((online) => {
+        const answer = reach(probeUrls(setting())).then((online) => {
           mark(online);
           return online;
         });

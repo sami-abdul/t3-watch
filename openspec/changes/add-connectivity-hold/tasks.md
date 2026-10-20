@@ -4,8 +4,8 @@
       `src/server/config.test.ts`:
       the link tracker: a recent internet pass, one shared probe reused for a minute, `probeUrls`,
       and the offline state stored with the time it began.
-- [ ] 1.2 `src/server/runner.ts`, `src/server/store.ts`, `src/server/app.ts`,
-      `src/server/runner.test.ts`: a non-passing result from a check that needs the internet is
+- [x] 1.2 `src/server/runner.ts`, `src/server/store.ts`, `src/server/app.ts`,
+      `src/server/runner.test.ts`, `src/server/cli.ts`, `src/server/testkit.ts`: a non-passing result from a check that needs the internet is
       held while Watch is offline; heartbeats and loopback HTTP checks never are.
 
 ## 2. Page and chat

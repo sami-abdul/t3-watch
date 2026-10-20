@@ -34,6 +34,7 @@ const start = async () => {
     dbFile: join(home, "watch.sqlite"),
     deps: liveDeps,
     roots: () => config.roots,
+    probeUrls: () => config.probeUrls,
   });
   const extension = extendServer({
     watch,

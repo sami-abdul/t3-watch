@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { WatchConfig } from "./config.ts";
 import { DEFAULT_PROBE_URLS, makeConnectivity, needsInternet } from "./connectivity.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
@@ -13,8 +12,7 @@ const setup = (probeUrls?: ReadonlyArray<string>) => {
       return new Response(null, { status: 204 });
     },
   });
-  const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "t", roots: [], publicUrl: null, ...(probeUrls === undefined ? {} : { probeUrls }) };
-  const link = makeConnectivity(fake.deps, testWatch(fake.deps).store, () => config);
+  const link = makeConnectivity(fake.deps, testWatch(fake.deps).store, () => probeUrls);
   return { link, net, advance: fake.advance };
 };
 
