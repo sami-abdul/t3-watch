@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -28,6 +28,20 @@ describe("config", () => {
     try {
       writeFileSync(join(home, "config.json"), JSON.stringify({ host: "[::1]", token: "t", roots: [] }));
       expect(loadConfig(home).host).toBe("::1");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps probeUrls only when someone set it", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-config-"));
+    try {
+      const file = join(home, "config.json");
+      writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [] }));
+      expect(loadConfig(home).probeUrls).toBeUndefined();
+      expect("probeUrls" in (JSON.parse(readFileSync(file, "utf8")) as object)).toBe(false);
+      writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [], probeUrls: [] }));
+      expect(loadConfig(home).probeUrls).toEqual([]);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

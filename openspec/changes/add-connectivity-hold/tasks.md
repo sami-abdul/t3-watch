@@ -1,6 +1,7 @@
 ## 1. Service
 
-- [ ] 1.1 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/config.ts`:
+- [x] 1.1 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/config.ts`,
+      `src/server/config.test.ts`:
       the link tracker: a recent internet pass, one shared probe reused for a minute, `probeUrls`,
       and the offline state stored with the time it began.
 - [ ] 1.2 `src/server/runner.ts`, `src/server/store.ts`, `src/server/app.ts`,

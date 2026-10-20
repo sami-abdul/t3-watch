@@ -12,6 +12,8 @@ export interface WatchConfig {
   readonly roots: ReadonlyArray<string>;
   /** Public base URL of the page when it is reached through a proxy such as Tailscale. */
   readonly publicUrl: string | null;
+  /** Addresses Watch probes to tell its own lost link from a site going down; [] turns that off. */
+  readonly probeUrls?: ReadonlyArray<string>;
 }
 
 export const watchHome = () => process.env.T3_WATCH_HOME ?? join(homedir(), ".t3-watch");
@@ -37,6 +39,8 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
     token: stored.token ?? randomBytes(24).toString("base64url"),
     roots: stored.roots ?? defaultRoots(),
     publicUrl: stored.publicUrl ?? null,
+    // Kept only when someone set it, so existing config files do not change.
+    ...(stored.probeUrls === undefined ? {} : { probeUrls: stored.probeUrls }),
   };
   if (JSON.stringify(stored) !== JSON.stringify(config)) saveConfig(config, home);
   return config;
