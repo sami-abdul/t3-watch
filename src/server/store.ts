@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
   check_id TEXT NOT NULL, at TEXT NOT NULL, status TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS heartbeats_by_check ON heartbeats(check_id, at);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS signin_codes (hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
 `;
 
 type Row = Record<string, unknown>;
@@ -449,6 +450,15 @@ export const openStore = (file: string) => {
           status,
         )?.at,
       ),
+
+    /** Keeps the hash of a one-time sign-in code until it expires. */
+    addSignInCode: (hash: string, expiresAt: string) =>
+      exec("INSERT INTO signin_codes (hash, expires_at) VALUES (?, ?)", hash, expiresAt),
+    /** Uses up a sign-in code: true only the first time, and only before it expires. */
+    takeSignInCode: (hash: string, now: string) => {
+      exec("DELETE FROM signin_codes WHERE expires_at <= ?", now);
+      return Number(exec("DELETE FROM signin_codes WHERE hash = ?", hash).changes) === 1;
+    },
 
     getKv: <T>(key: string, fallback: T): T =>
       parse(one("SELECT value FROM kv WHERE key = ?", key)?.value, fallback),

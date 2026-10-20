@@ -1,6 +1,6 @@
 ## 1. Sign-in links
 
-- [ ] 1.1 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`: codes stored
+- [x] 1.1 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`: codes stored
       hashed with a 10-minute expiry and taken once.
 - [ ] 1.2 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/chat.test.ts`: `/signin`
       takes a code once; the token form goes.
