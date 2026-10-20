@@ -115,12 +115,14 @@ describe("probe", () => {
       expect((await probe(at(odd.port))).kind).toBe("unexpected");
       expect((await probe(at(stuck.port), 200)).kind).toBe("slow");
     } finally {
-      for (const { server } of [running, refusing, failing, page, odd, stuck]) {
-        server.closeAllConnections();
-        server.close();
-      }
+      await Promise.all(
+        [running, refusing, failing, page, odd, stuck].map(({ server }) => {
+          server.closeAllConnections();
+          return new Promise<void>((resolve) => server.close(() => resolve()));
+        }),
+      );
     }
-    // The refusing server's port, now closed, has nothing listening.
+    // The refusing server's port, closed and released above, has nothing listening.
     expect((await probe(at(refusing.port))).kind).toBe("absent");
   });
 });
