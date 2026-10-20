@@ -28,14 +28,33 @@ const sameToken = (given: string, expected: string) => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
-export const isAuthorized = (request: IncomingMessage, token: string) => {
-  const header = request.headers.authorization ?? "";
-  if (header.startsWith("Bearer ") && sameToken(header.slice(7), token)) return true;
+/** The page's signed-in session: the cookie the sign-in link sets. */
+export const hasPageSession = (request: IncomingMessage, token: string) => {
   const cookie = (request.headers.cookie ?? "")
     .split(";")
     .map((part) => part.trim().split("="))
     .find(([name]) => name === COOKIE);
   return cookie?.[1] !== undefined && sameToken(decodeURIComponent(cookie[1]), token);
+};
+
+export const isAuthorized = (request: IncomingMessage, token: string) => {
+  const header = request.headers.authorization ?? "";
+  if (header.startsWith("Bearer ") && sameToken(header.slice(7), token)) return true;
+  return hasPageSession(request, token);
+};
+
+/** A request the page made from its own origin, not another site or a script without an Origin. */
+export const fromPage = (request: IncomingMessage, publicUrl: string | null) => {
+  const site = request.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin") return false;
+  const origin = request.headers.origin;
+  const host = request.headers.host;
+  if (origin === undefined) return false;
+  const allowed = [
+    ...(host === undefined ? [] : [`http://${host}`, `https://${host}`]),
+    ...(publicUrl === null ? [] : [URL.parse(publicUrl)?.origin ?? ""]),
+  ];
+  return allowed.includes(origin);
 };
 
 export const sendJson = (response: ServerResponse, status: number, body: unknown) => {

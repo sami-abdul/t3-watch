@@ -37,7 +37,7 @@
 - [ ] 5.3 `src/web/Details.tsx`: replacing a secret while alerts are on asks first.
 - [x] 5.4 `src/server/cli.ts`, `src/server/mcp.ts`, `README.md`: `install` never prints the token;
       the agent instructions say never to fetch the sign-in link.
-- [ ] 5.5 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the secret
+- [x] 5.5 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the secret
       route takes only the page's signed-in session from the page's own origin.
 - [ ] 5.6 `src/server/config.ts`, `src/server/config.test.ts`: `localUrl` accepts a bracketed
       IPv6 host.

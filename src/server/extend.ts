@@ -4,7 +4,7 @@ import { deliverAlerts, makeAlertSecret } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
 import { pageUrl, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft } from "./drafts.ts";
-import { type Route, readJson, sendJson } from "./http.ts";
+import { fromPage, hasPageSession, type Route, readJson, sendJson } from "./http.ts";
 import { makeMcpServer } from "./mcp.ts";
 
 /** Routes and background work that build on the core service: settings, drafts, MCP, alerts. */
@@ -44,9 +44,13 @@ export const extendServer = (options: {
     return true;
   };
 
-  // The page shows the secret once. MCP never offers this, so the secret stays out of chats.
+  // The reply is the secret itself, so only the signed-in page gets it, never the API token that
+  // agents hold. MCP has no way to it either, so the secret stays out of chats.
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
+    const config = options.config();
+    if (!hasPageSession(request, config.token) || !fromPage(request, config.publicUrl))
+      throw new WatchError("Make the signing secret on the Watch page", 403);
     sendJson(response, 200, { secret: makeAlertSecret(watch) });
     return true;
   };

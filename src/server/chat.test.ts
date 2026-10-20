@@ -158,12 +158,19 @@ describe("alerts", () => {
     expect(sent[1]).toMatch(/^Watch check passing again: example\/api: CI on main is passing\. Answered 200 in \d+ ms$/);
   });
 
-  it("makes the signing secret for the page and keeps it out of state", async () => {
+  it("makes the signing secret only for the signed-in page and keeps it out of state", async () => {
     const watch = testWatch(fakeDeps({}).deps);
     const { url } = await connect(watch);
     const auth = { authorization: `Bearer ${config.token}` };
-    expect((await fetch(new URL("/api/alerts/secret", url), { method: "POST" })).status).toBe(401);
-    const response = await fetch(new URL("/api/alerts/secret", url), { method: "POST", headers: auth });
+    const page = { cookie: `t3w=${config.token}`, origin: url.origin };
+    const make = (headers: Record<string, string>) => fetch(new URL("/api/alerts/secret", url), { method: "POST", headers });
+    expect((await make({})).status).toBe(401);
+    // The API token agents hold is not enough, nor is the cookie from another origin.
+    expect((await make(auth)).status).toBe(403);
+    expect((await make({ ...page, origin: "http://evil.test" })).status).toBe(403);
+    expect((await make({ ...page, "sec-fetch-site": "same-site" })).status).toBe(403);
+    expect(alertSettings(watch).secret).toBeNull();
+    const response = await make(page);
     const { secret } = (await response.json()) as { secret: string };
     expect(secret).toMatch(/^[0-9a-f]{64}$/);
     expect(alertSettings(watch).secret).toBe(secret);
