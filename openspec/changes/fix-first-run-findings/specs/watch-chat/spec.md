@@ -22,3 +22,13 @@ and SHALL NOT have the agent generate, hold or repeat the secret.
 
 - **WHEN** an agent calls `watch_set_alerts` with a `secret`
 - **THEN** the call fails, nothing is stored, and the error says to make the secret on the page
+
+### Requirement: Home summary in structured content
+
+`watch_home` SHALL return its text summary both as text content and inside its structured
+content, because some MCP clients show the model only the structured content.
+
+#### Scenario: A client that reads structured content
+
+- **WHEN** a Claude Code thread calls `watch_home`
+- **THEN** the result it shows includes the summary of what is broken and what passes

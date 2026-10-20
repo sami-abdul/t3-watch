@@ -83,8 +83,9 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
       _meta: { ui: { resourceUri: HOME_URI } },
     },
     async () => {
-      const state = readState(watch);
-      return text(homeText(state), { pageUrl: options.pageUrl() });
+      const summary = homeText(readState(watch));
+      // Some clients, Claude Code among them, show the model only the structured content.
+      return text(summary, { summary, pageUrl: options.pageUrl() });
     },
   );
 

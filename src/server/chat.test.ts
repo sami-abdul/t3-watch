@@ -45,6 +45,14 @@ describe("mcp", () => {
     expect(resource.contents[0]!.mimeType).toBe("text/html;profile=mcp-app");
   });
 
+  it("puts Home's summary in the structured content too", async () => {
+    const { client } = await connect(testWatch(fakeDeps({}).deps));
+    const home = await client.callTool({ name: "watch_home", arguments: {} });
+    const summary = (home.structuredContent as { summary: string }).summary;
+    expect(summary).toBe("Watch is not set up yet. Call watch_scan.");
+    expect(firstText(home as never)).toBe(summary);
+  });
+
   it("refuses MCP without the token", async () => {
     const { url } = await connect(testWatch(fakeDeps({}).deps));
     const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });

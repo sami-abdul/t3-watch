@@ -25,6 +25,8 @@ hours also showed as passing, because the GitHub check reads only the latest run
   and shown once. `watch_set_alerts` refuses a secret. The agent instructions use T3's
   `request_secret` so the person pastes the secret into a private card, and `signature.secretRef`
   on the webhook task, so the secret never enters a transcript.
+- `watch_home` puts its text summary in the structured content as well. Claude Code shows the
+  model only the structured content, so a Claude Watch thread saw just the page address.
 - A `github` check can take `maxAgeSeconds`: it then also fails when the newest successful run is
   older than that, which catches a scheduled workflow that stopped running.
 - The Details folder list shows the configured folders, not the folders of the last scan.
@@ -38,7 +40,8 @@ None.
 ### Modified Capabilities
 
 - `watch-service`: status and sign-in output; GitHub freshness.
-- `watch-chat`: alert text; alert secret made on the page and refused over MCP.
+- `watch-chat`: alert text; alert secret made on the page and refused over MCP; Home's
+  summary for clients that read structured content.
 - `watch-page`: spacing, Ask why without a clipboard, the alerts secret control, the folder list.
 - `setup-scan`: CI check wording.
 

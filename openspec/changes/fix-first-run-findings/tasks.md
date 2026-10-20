@@ -19,6 +19,9 @@
       makes the signing secret; `watch_set_alerts` refuses one; instructions use
       `request_secret`.
 
+- [x] 3.3 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_home` puts its summary in the
+      structured content as well as the text.
+
 ## 4. Checks
 
 - [x] 4.1 `src/server/checks/github.ts`, `src/server/mcp.ts`, `README.md`: `maxAgeSeconds` on
@@ -26,7 +29,8 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Tests for each server change in `src/server/*.test.ts`; `pnpm test`.
+- [ ] 5.1 Tests for each server change in `src/server/config.test.ts`, `src/server/chat.test.ts`,
+      `src/server/scan.test.ts` and `src/server/checks.test.ts`; `pnpm test`.
 - [ ] 5.2 `pnpm typecheck`; `pnpm build`; `openspec validate fix-first-run-findings --strict`.
 - [ ] 5.3 On a running install: `t3-watch status` with a non-loopback host, the page in a
       browser, Make a signing secret, and a GitHub check with `maxAgeSeconds` against a real
