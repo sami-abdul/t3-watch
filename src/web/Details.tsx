@@ -67,16 +67,24 @@ export function Details({
   }, [alertsOn]);
   const replacing = confirmReplace && alertsOn;
   const [rootsError, setRootsError] = useState<string | null>(null);
-  // Tries again on every refresh until the folder list loads.
+  // Tries again on every refresh until the folder list loads. A reply that arrives after a newer
+  // request, or after a save, is ignored.
   useEffect(() => {
     if (configured !== null) return;
+    let current = true;
     client.roots?.().then(
       (list) => {
+        if (!current) return;
         setConfigured(list);
         setRootsError(null);
       },
-      (e: unknown) => setRootsError(e instanceof Error ? e.message : String(e)),
+      (e: unknown) => {
+        if (current) setRootsError(e instanceof Error ? e.message : String(e));
+      },
     );
+    return () => {
+      current = false;
+    };
   }, [client, configured, state.generatedAt]);
   const act = async (work: () => Promise<unknown>) => {
     setError(null);
