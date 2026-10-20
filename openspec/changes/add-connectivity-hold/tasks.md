@@ -21,7 +21,7 @@
 
 ## 4. Review follow-ups
 
-- [ ] 4.1 `src/server/config.ts`, `src/server/connectivity.ts`, `src/server/connectivity.test.ts`:
+- [x] 4.1 `src/server/config.ts`, `src/server/connectivity.ts`, `src/server/connectivity.test.ts`:
       one loopback helper for both files; checks on the local network, the tailnet or `.local`
       names need no internet, so they are never held and never vouch for the link.
 - [ ] 4.2 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/runner.ts`,

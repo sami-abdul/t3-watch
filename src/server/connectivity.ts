@@ -2,6 +2,9 @@
  * Whether Watch itself can reach the internet. When its own link drops, every check that needs the
  * internet fails at once; Watch holds those results instead of alerting on each of them.
  */
+import { isIPv6 } from "node:net";
+
+import { bareHost, isLoopbackHost } from "./config.ts";
 import type { Deps } from "./proc.ts";
 import type { Check, Store } from "./store.ts";
 
@@ -21,14 +24,34 @@ export interface Link {
   readonly offlineSince: string | null;
 }
 
-const LOOPBACK = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i;
+const LOCAL_NAMES = /(^|\.)(local|lan|internal|home\.arpa|ts\.net)$/;
 
-/** Whether a check needs the internet to run. Heartbeats and loopback HTTP checks do not. */
+/** Private, link-local, Tailscale and unspecified IPv4 ranges. */
+const localV4 = (a: number, b: number) =>
+  a === 0 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+
+/**
+ * Whether a host is this machine, the local network or the tailnet, none of which needs the
+ * internet: loopback, private, link-local and Tailscale addresses, and .local, .lan, .internal,
+ * .home.arpa and .ts.net names.
+ */
+export const isLocalHost = (hostname: string) => {
+  const host = bareHost(hostname).replace(/\.$/, "").toLowerCase();
+  if (isLoopbackHost(host)) return true;
+  const dotted = /^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
+  if (dotted !== null) return localV4(Number(dotted[1]), Number(dotted[2]));
+  const mapped = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(host);
+  if (mapped !== null) return localV4(parseInt(mapped[1]!, 16) >> 8, parseInt(mapped[1]!, 16) & 255);
+  if (isIPv6(host)) return host === "::" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host);
+  return LOCAL_NAMES.test(host);
+};
+
+/** Whether a check needs the internet to run. Heartbeats and local HTTP checks do not. */
 export const needsInternet = (check: Pick<Check, "kind" | "config">) => {
   if (check.kind === "heartbeat") return false;
   if (check.kind !== "http") return true;
-  const host = URL.parse(String(check.config.url ?? ""))?.hostname ?? "";
-  return !LOOPBACK.test(host) && !host.endsWith(".localhost");
+  const url = URL.parse(String(check.config.url ?? ""));
+  return url !== null && !isLocalHost(url.hostname);
 };
 
 /** The probeUrls setting as a list, or the defaults when it is missing or malformed. */

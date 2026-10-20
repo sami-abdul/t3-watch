@@ -62,9 +62,26 @@ describe("connectivity", () => {
 
   it("knows which checks need the internet", () => {
     expect(needsInternet({ kind: "heartbeat", config: {} })).toBe(false);
-    for (const url of ["http://localhost:8080/", "http://127.0.0.1/", "http://[::1]:3000/", "http://app.localhost/"])
-      expect(needsInternet({ kind: "http", config: { url } })).toBe(false);
-    expect(needsInternet({ kind: "http", config: { url: "https://example.com/" } })).toBe(true);
+    // This machine, the local network and the tailnet need no internet.
+    for (const url of [
+      "http://localhost:8080/",
+      "http://localhost./",
+      "http://127.0.0.1/",
+      "http://0.0.0.0:8460/",
+      "http://[::1]:3000/",
+      "http://[::ffff:127.0.0.1]/",
+      "http://app.localhost/",
+      "http://192.168.1.10/",
+      "http://10.0.0.2/",
+      "http://172.20.0.5/",
+      "http://100.65.64.7:8460/",
+      "http://[fd7a:115c:a1e0::1]/",
+      "http://nas.local/",
+      "https://leviathan.tail5ed0f2.ts.net:8461/",
+    ])
+      expect(needsInternet({ kind: "http", config: { url } }), url).toBe(false);
+    for (const url of ["https://example.com/", "http://172.32.0.1/", "http://8.8.8.8/", "http://[2606:4700::1111]/"])
+      expect(needsInternet({ kind: "http", config: { url } }), url).toBe(true);
     expect(needsInternet({ kind: "github", config: {} })).toBe(true);
   });
 });

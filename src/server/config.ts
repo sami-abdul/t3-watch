@@ -24,7 +24,17 @@ const defaultRoots = () =>
     .filter((dir) => existsSync(dir));
 
 /** An IPv6 address without the brackets URLs put around it, the form listen() wants. */
-const bareHost = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
+export const bareHost = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
+
+/** Whether a host, bracketed or not, is this machine: 127.0.0.0/8, ::1 and their mapped forms, or localhost. */
+export const isLoopbackHost = (host: string) => {
+  const bare = bareHost(host).replace(/\.$/, "").toLowerCase();
+  if (bare === "localhost" || bare.endsWith(".localhost") || bare === "::1") return true;
+  const dotted = /^(?:::ffff:)?(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.exec(bare);
+  if (dotted !== null) return dotted[1] === "127";
+  const mapped = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(bare);
+  return mapped !== null && parseInt(mapped[1]!, 16) >> 8 === 127;
+};
 
 /** Reads config.json, creating it with a fresh token on first use. */
 export const loadConfig = (home = watchHome()): WatchConfig => {
@@ -67,7 +77,7 @@ export const pageUrl = (config: WatchConfig) => config.publicUrl ?? localUrl(con
  */
 export const listenHosts = (config: WatchConfig) => {
   const host = bareHost(config.host);
-  const loopbackOrAll = ["0.0.0.0", "::", "::1", "localhost"].includes(host) || host.startsWith("127.");
+  const loopbackOrAll = host === "0.0.0.0" || host === "::" || isLoopbackHost(host);
   return loopbackOrAll ? [host] : [host, "127.0.0.1"];
 };
 
