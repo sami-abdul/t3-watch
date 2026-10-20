@@ -52,9 +52,12 @@ Things to ask:
 - "Make sure the nightly import ran." The agent drafts a check, runs it once, and leaves it for you
   to turn on.
 - "Watch Missive too." The agent writes a vendor description and tests it with your key.
-- "Set up alerts." The agent creates a T3 webhook task bound to the thread and gives Watch its
-  address. From then on, a check that starts or stops failing wakes the thread, and the agent
-  looks into it before you open it.
+- "Set up alerts." First press **Make a signing secret** under Alerts in the page's Details. The
+  agent asks you to paste it into a private T3 card, creates a T3 webhook task bound to the
+  thread that checks Watch's signature, and gives Watch the task's address. The secret never
+  passes through the chat, and Watch refuses one sent over MCP. From then on, a check that starts
+  failing, recovers or can't run wakes the thread, and the agent looks into it before you open
+  it. Checks that keep passing send nothing.
 
 ## Vendors
 

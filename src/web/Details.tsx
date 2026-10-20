@@ -56,6 +56,8 @@ export function Details({
   const [error, setError] = useState<string | null>(null);
   const [roots, setRoots] = useState<string | null>(null);
   const [configured, setConfigured] = useState<ReadonlyArray<string> | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [makingSecret, setMakingSecret] = useState(false);
   useEffect(() => {
     client.roots?.().then(setConfigured, () => {});
   }, [client]);
@@ -154,10 +156,43 @@ export function Details({
 
       <Section title="Alerts">
         <Muted>
-          {state.alerts.url === null
-            ? "Off. Ask the Watch thread to set up alerts; it creates a T3 webhook task and hands Watch its address."
-            : `Changes go to ${state.alerts.url}${state.alerts.signed ? ", signed" : ""}.`}
+          {state.alerts.url !== null
+            ? `Changes go to ${state.alerts.url}, ${state.alerts.signed ? "signed" : "not signed"}.`
+            : client.makeAlertSecret === null
+              ? "Off. Make a signing secret on the Watch page, then ask the Watch thread to set up alerts."
+              : state.alerts.signed
+                ? "Off. A signing secret is ready: ask your Watch thread to set up alerts and paste the secret into the card it shows."
+                : "Off. Make a signing secret, then ask your Watch thread to set up alerts. It creates a T3 webhook task and asks you to paste the secret into a private card."}
         </Muted>
+        {client.makeAlertSecret === null ? null : secret !== null ? (
+          <div className="space-y-2">
+            <code className={cn("block select-all break-all rounded-lg border border-border p-3 font-mono text-foreground", typeClass("caption"))}>
+              {secret}
+            </code>
+            <Muted className={typeClass("caption")}>
+              Paste this into the card your Watch thread shows. It is shown once. Watch signs every alert with it from now on,
+              and the T3 task refuses alerts until it has the same secret.
+            </Muted>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="compact"
+              variant="secondary"
+              loading={makingSecret}
+              onClick={async () => {
+                setMakingSecret(true);
+                await act(async () => setSecret(await client.makeAlertSecret!()));
+                setMakingSecret(false);
+              }}
+            >
+              {state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
+            </Button>
+            {state.alerts.signed ? (
+              <Muted className={typeClass("caption")}>Replaces the current secret. Alerts fail until the T3 task has the new one.</Muted>
+            ) : null}
+          </div>
+        )}
       </Section>
 
       <Section title="Recent changes">

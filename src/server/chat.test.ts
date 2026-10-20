@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { deliverAlerts, setAlerts } from "./alerts.ts";
+import { alertSettings, deliverAlerts, makeAlertSecret, setAlerts } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { decideDraft, draftCheck, draftVendor } from "./drafts.ts";
@@ -148,6 +148,35 @@ describe("alerts", () => {
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(2);
     expect(sent[0]).toBe("Watch check failed: example/api: CI on main is passing. Answered 500");
     expect(sent[1]).toMatch(/^Watch check passing again: example\/api: CI on main is passing\. Answered 200 in \d+ ms$/);
+  });
+
+  it("makes the signing secret for the page and keeps it out of state", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const { url } = await connect(watch);
+    const auth = { authorization: `Bearer ${config.token}` };
+    expect((await fetch(new URL("/api/alerts/secret", url), { method: "POST" })).status).toBe(401);
+    const response = await fetch(new URL("/api/alerts/secret", url), { method: "POST", headers: auth });
+    const { secret } = (await response.json()) as { secret: string };
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(alertSettings(watch).secret).toBe(secret);
+    const state = await (await fetch(new URL("/api/state", url), { headers: auth })).text();
+    expect(state).not.toContain(secret);
+    expect(JSON.parse(state).alerts.signed).toBe(true);
+  });
+
+  it("refuses a secret over MCP and keeps the one made on the page", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const { client } = await connect(watch);
+    expect(client.getInstructions()).toContain("request_secret");
+    expect(client.getInstructions()).toContain("secretRef");
+    const secret = makeAlertSecret(watch);
+    const refused = await client.callTool({ name: "watch_set_alerts", arguments: { url: "https://t3.example/hook", secret: "chat-secret-1234567890" } });
+    expect(refused.isError).toBe(true);
+    expect(firstText(refused as never)).toContain("Make a signing secret");
+    expect(alertSettings(watch)).toEqual({ url: null, secret });
+    const set = await client.callTool({ name: "watch_set_alerts", arguments: { url: "https://t3.example/hook" } });
+    expect(firstText(set as never)).toBe("Alerts go to https://t3.example/hook, signed.");
+    expect(alertSettings(watch)).toEqual({ url: "https://t3.example/hook", secret });
   });
 
   it("sends nothing while checks keep passing", async () => {

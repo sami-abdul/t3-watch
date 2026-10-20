@@ -1,6 +1,6 @@
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 
-import { deliverAlerts } from "./alerts.ts";
+import { deliverAlerts, makeAlertSecret } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
 import { pageUrl, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft } from "./drafts.ts";
@@ -44,6 +44,13 @@ export const extendServer = (options: {
     return true;
   };
 
+  // The page shows the secret once. MCP never offers this, so the secret stays out of chats.
+  const alertSecret: Route = async (request, response, url) => {
+    if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
+    sendJson(response, 200, { secret: makeAlertSecret(watch) });
+    return true;
+  };
+
   // Stateless MCP: a fresh server per request, behind the same token as the API.
   const mcp: Route = async (request, response, url) => {
     if (url.pathname !== "/mcp") return false;
@@ -72,7 +79,7 @@ export const extendServer = (options: {
   let unsubscribe: (() => void) | null = null;
 
   return {
-    routes: [settings, drafts, mcp] as ReadonlyArray<Route>,
+    routes: [settings, drafts, alertSecret, mcp] as ReadonlyArray<Route>,
     publicRoutes: [] as ReadonlyArray<Route>,
     start: () => {
       unsubscribe = watch.onEvent(send) as () => void;

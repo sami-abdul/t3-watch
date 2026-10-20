@@ -2,7 +2,7 @@
  * Change events go to one URL, normally a T3 webhook task that wakes the Watch thread. Only
  * changes are sent, so hours where everything passes cost nothing.
  */
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 import { type WatchCore, WatchError } from "./app.ts";
 import type { ChangeEvent } from "./store.ts";
@@ -28,6 +28,16 @@ export const setAlerts = (watch: WatchCore, input: { url: string | null; secret?
   const next: AlertSettings = { url: input.url, secret: input.secret === undefined ? previous.secret : input.secret };
   watch.store.setKv("alerts", next);
   return { url: next.url, signed: next.secret !== null };
+};
+
+/**
+ * Makes a new signing secret, replacing any earlier one. Only the page shows it, once: a secret
+ * that passes through a chat stays in that chat's transcript.
+ */
+export const makeAlertSecret = (watch: WatchCore) => {
+  const secret = randomBytes(32).toString("hex");
+  watch.store.setKv("alerts", { ...alertSettings(watch), secret } satisfies AlertSettings);
+  return secret;
 };
 
 export const eventPayload = (watch: WatchCore, event: ChangeEvent, pageUrl: string) => {

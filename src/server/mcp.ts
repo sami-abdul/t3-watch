@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { alertSettings, setAlerts } from "./alerts.ts";
-import type { Watch } from "./app.ts";
+import { type Watch, WatchError } from "./app.ts";
 import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "./drafts.ts";
 import { homeText, readState } from "./state.ts";
 
@@ -25,8 +25,11 @@ Roles: the page is for knowing and deciding (turn on, pause, add keys). You are 
 - First setup: watch_scan, show the result, and let the person tick what to keep on the page or answer in words; then watch_apply.
 - New checks: watch_draft_check. It runs once and waits for the person; never assume it is on. New vendors: watch_draft_vendor with a JSON description (see catalog/*.json in the t3-watch repo for the shape); GET-only, https origin.
 - Never ask for, accept or repeat a key or token in chat. Keys are added on the page (Add key).
-- Alerts: to wake this thread when a check changes, create a T3 webhook task bound to this thread with schedule_task, with a prompt like "Watch reported: {{body.text}}. Look into it with watch_check {{body.checkId}}, leave a watch_note, and tell me what to do." Watch signs each alert as header X-Watch-Signature, value "sha256=" followed by the hex HMAC-SHA256 of the body, so set the task's signature to {"header":"X-Watch-Signature","encoding":"hex","prefix":"sha256=","secret":<secret>}. Make the secret with a command whose output you do not echo or quote (for example store it in a shell variable), pass it only as a tool argument, and never write it or the webhook URL in a reply. Then pass the webhookUrl and the same secret to watch_set_alerts. For a morning digest, schedule a weekday task that calls watch_status.
+- Alerts: to wake this thread when a check changes, first ask the person to open the Watch page, go to Details and press Make a signing secret under Alerts; the page shows the secret once. Then call request_secret so they paste it into a private card. Never ask for the secret in chat, never make one yourself, and never write it anywhere. Create a T3 webhook task bound to this thread with schedule_task: schedule {"type":"webhook","signature":{"header":"X-Watch-Signature","encoding":"hex","prefix":"sha256=","secretRef":<the secretRef from request_secret>}} and a prompt like "Watch reported: {{body.text}}. Look into it with watch_check {{body.checkId}}, leave a watch_note, and tell me what to do." Pass only the returned webhookUrl to watch_set_alerts, and don't repeat the URL in a reply. If the person makes a new secret later, alerts fail until you give the task the new one the same way with update_scheduled_task. For a morning digest, schedule a weekday task that calls watch_status.
 - Code fixes belong in a normal coding thread in that repository, ending in a pull request. Do not edit code from the Watch thread.`;
+
+const SECRET_REFUSED =
+  "Watch does not take a secret over chat, because it would stay in the transcript. Ask the person to press Make a signing secret under Alerts on the Watch page, collect it with request_secret, and attach it to the webhook task with signature.secretRef. Then call watch_set_alerts with the url only.";
 
 const text = (value: string, structured?: Record<string, unknown>) => ({
   content: [{ type: "text" as const, text: value }],
@@ -253,13 +256,21 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
     "watch_set_alerts",
     {
       description:
-        "Sets where Watch sends a change event (one POST per check that starts or stops failing): normally a T3 webhook task URL. Pass url null to stop. The secret, when given, signs each body with HMAC-SHA256 in X-Watch-Signature.",
-      inputSchema: z.object({ url: z.string().nullable(), secret: z.string().min(16).nullable().optional() }),
+        "Sets where Watch sends a change event (one POST per check that starts or stops failing): normally a T3 webhook task URL. Pass url null to stop. Watch signs each body in X-Watch-Signature with the secret the person made on the page; this tool never takes a secret.",
+      inputSchema: z.object({
+        url: z.string().nullable(),
+        secret: z.unknown().optional().describe("Never pass this. The person makes the secret on the Watch page; a secret passed here is refused."),
+      }),
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    safely(async ({ url, secret }: { url: string | null; secret?: string | null }) => {
-      const result = setAlerts(watch, { url, ...(secret === undefined ? {} : { secret }) });
-      return text(result.url === null ? "Alerts are off." : `Alerts go to ${result.url}${result.signed ? ", signed" : ""}.`);
+    safely(async ({ url, secret }: { url: string | null; secret?: unknown }) => {
+      if (secret !== undefined) throw new WatchError(SECRET_REFUSED);
+      const result = setAlerts(watch, { url });
+      return text(
+        result.url === null
+          ? "Alerts are off."
+          : `Alerts go to ${result.url}${result.signed ? ", signed" : ". They are not signed: ask the person to press Make a signing secret on the Watch page"}.`,
+      );
     }),
   );
 

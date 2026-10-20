@@ -14,7 +14,7 @@
 ## 3. Alerts
 
 - [x] 3.1 `src/server/alerts.ts`, `src/server/scan.ts`: alert text and CI wording.
-- [ ] 3.2 `src/server/alerts.ts`, `src/server/extend.ts`, `src/server/mcp.ts`,
+- [x] 3.2 `src/server/alerts.ts`, `src/server/extend.ts`, `src/server/mcp.ts`,
       `src/web/client.ts`, `src/web/Details.tsx`, `src/web/app-entry.tsx`, `README.md`: the page
       makes the signing secret; `watch_set_alerts` refuses one; instructions use
       `request_secret`.

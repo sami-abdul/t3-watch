@@ -22,6 +22,8 @@ export interface WatchClient {
   /** The folders setup scans, from the config. Null where they cannot be edited. */
   readonly roots: (() => Promise<ReadonlyArray<string>>) | null;
   readonly saveRoots: ((roots: ReadonlyArray<string>) => Promise<void>) | null;
+  /** Makes a new alert signing secret and returns it, once. Null in a chat, where it would stay in the transcript. */
+  readonly makeAlertSecret: (() => Promise<string>) | null;
   /** Hands a question to the Watch thread. Returns what the person should know. */
   readonly ask: (text: string) => Promise<string>;
   readonly openPage: (() => void) | null;
@@ -62,6 +64,7 @@ export const httpClient: WatchClient = {
   saveRoots: async (roots) => {
     await post("/api/settings", { roots });
   },
+  makeAlertSecret: async () => (await post<{ secret: string }>("/api/alerts/secret")).secret,
   ask: async (text) => {
     try {
       await navigator.clipboard.writeText(text);

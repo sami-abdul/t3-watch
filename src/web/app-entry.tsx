@@ -51,6 +51,7 @@ const mcpClient: WatchClient = {
   removeKey: null,
   roots: null,
   saveRoots: null,
+  makeAlertSecret: null,
   ask: async (text) => {
     await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
     return "Sent to the Watch thread.";
