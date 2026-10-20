@@ -29,7 +29,8 @@
       `src/server/http.ts`, `src/server/extend.ts`, `src/server/cli.ts`, `src/server/cli.test.ts`,
       `src/server/chat.test.ts`, `README.md`: a browser gets its own session, never the access
       token; `t3-watch signout` ends every browser session.
-- [ ] 4.3 `src/server/store.ts`: the busy timeout comes before WAL; one write per sign-in try.
+- [x] 4.3 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`: the busy
+      timeout comes before WAL; one write per sign-in try; making a code clears expired ones.
 - [ ] 4.4 `src/server/http.ts`, `src/server/mcp.ts`, `src/server/cli.ts`: one expiry constant in
       every message; the install comment matches what it prints.
 - [ ] 4.5 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` warns when no Watch answers for

@@ -186,7 +186,8 @@ export type Store = ReturnType<typeof openStore>;
 /** All persistent state, in one SQLite file. Pass ":memory:" in tests. */
 export const openStore = (file: string) => {
   const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+  // The timeout first, so a CLI opening the file while the service writes waits instead of failing.
+  db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
   db.exec(SCHEMA);
   const all = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).all(...params) as Array<Row>;
@@ -452,14 +453,14 @@ export const openStore = (file: string) => {
         )?.at,
       ),
 
-    /** Keeps the hash of a one-time sign-in code until it expires. */
-    addSignInCode: (hash: string, expiresAt: string) =>
-      exec("INSERT INTO signin_codes (hash, expires_at) VALUES (?, ?)", hash, expiresAt),
-    /** Uses up a sign-in code: true only the first time, and only before it expires. */
-    takeSignInCode: (hash: string, now: string) => {
+    /** Keeps the hash of a one-time sign-in code until it expires, clearing expired ones. */
+    addSignInCode: (hash: string, expiresAt: string, now: string) => {
       exec("DELETE FROM signin_codes WHERE expires_at <= ?", now);
-      return Number(exec("DELETE FROM signin_codes WHERE hash = ?", hash).changes) === 1;
+      exec("INSERT INTO signin_codes (hash, expires_at) VALUES (?, ?)", hash, expiresAt);
     },
+    /** Uses up a sign-in code: true only the first time, and only before it expires. One write. */
+    takeSignInCode: (hash: string, now: string) =>
+      Number(exec("DELETE FROM signin_codes WHERE hash = ? AND expires_at > ?", hash, now).changes) === 1,
 
     /** Keeps the hash of a browser session. */
     addSession: (hash: string, at: string) =>

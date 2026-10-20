@@ -13,7 +13,7 @@ const hash = (code: string) => createHash("sha256").update(code).digest("hex");
 
 export const makeSignInCode = (store: Store, now: Date) => {
   const code = randomBytes(24).toString("base64url");
-  store.addSignInCode(hash(code), new Date(now.getTime() + SIGN_IN_MINUTES * 60_000).toISOString());
+  store.addSignInCode(hash(code), new Date(now.getTime() + SIGN_IN_MINUTES * 60_000).toISOString(), now.toISOString());
   return code;
 };
 

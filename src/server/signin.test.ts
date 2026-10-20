@@ -28,6 +28,8 @@ describe("sign-in codes", () => {
     const dir = mkdtempSync(join(tmpdir(), "t3w-signin-"));
     try {
       const store = openStore(join(dir, "watch.sqlite"));
+      makeSignInCode(store, at("2026-10-20T09:00:00Z"));
+      // Making a code clears the ones that expired.
       const code = makeSignInCode(store, at("2026-10-20T10:00:00Z"));
       store.close();
       const db = new DatabaseSync(join(dir, "watch.sqlite"));
