@@ -58,6 +58,8 @@ export function Details({
   const [configured, setConfigured] = useState<ReadonlyArray<string> | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [makingSecret, setMakingSecret] = useState(false);
+  // Replacing a secret while alerts are on stops them until the T3 task has the new one.
+  const [confirmReplace, setConfirmReplace] = useState(false);
   useEffect(() => {
     client.roots?.().then(setConfigured, () => {});
   }, [client]);
@@ -181,15 +183,29 @@ export function Details({
               variant="secondary"
               loading={makingSecret}
               onClick={async () => {
+                if (state.alerts.url !== null && state.alerts.signed && !confirmReplace) {
+                  setConfirmReplace(true);
+                  return;
+                }
                 setMakingSecret(true);
                 await act(async () => setSecret(await client.makeAlertSecret!()));
                 setMakingSecret(false);
+                setConfirmReplace(false);
               }}
             >
-              {state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
+              {confirmReplace ? "Replace the secret" : state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
             </Button>
+            {confirmReplace ? (
+              <Button size="compact" variant="ghost" onClick={() => setConfirmReplace(false)}>
+                Cancel
+              </Button>
+            ) : null}
             {state.alerts.signed ? (
-              <Muted className={typeClass("caption")}>Replaces the current secret. Alerts fail until the T3 task has the new one.</Muted>
+              <Muted className={typeClass("caption")}>
+                {confirmReplace
+                  ? "Alerts stop reaching your Watch thread until its T3 task has the new secret."
+                  : "Replaces the current secret. Alerts fail until the T3 task has the new one."}
+              </Muted>
             ) : null}
           </div>
         )}
