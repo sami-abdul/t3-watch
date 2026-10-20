@@ -55,12 +55,17 @@ describe("mcp", () => {
   });
 
   it("says first when Watch cannot reach the internet", async () => {
-    const watch = testWatch(fakeDeps({}).deps);
-    watch.store.setKv("link", { offlineSince: "2026-10-15T09:58:00.000Z" });
+    // Holding on, nothing on the network answers, and one check that needs the internet fails.
+    const watch = testWatch(fakeDeps({}).deps, () => undefined);
+    watch.defineCheck(
+      { id: "site", serviceId: "s", kind: "http", intent: "x", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
     const { client } = await connect(watch);
     const text = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);
     expect(text.split("\n")[0]).toBe(
-      "Watch cannot reach the internet since 2026-10-15 09:58 UTC. Checks that need it are on hold, and nothing alerts until it is back.",
+      "Watch cannot reach the internet since 2026-10-15 10:00 UTC. Checks that need it are on hold, and nothing alerts until it is back.",
     );
   });
 

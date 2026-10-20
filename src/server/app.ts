@@ -48,7 +48,7 @@ const makeCore = (options: WatchOptions) => {
   reloadCatalog();
   const listeners = new Set<(event: ChangeEvent) => void>();
   const context: CheckContext = { deps: options.deps, store, keyring, vendors: () => catalog };
-  const connectivity = makeConnectivity(options.deps, store, options.probeUrls);
+  const connectivity = makeConnectivity(options.deps, options.probeUrls);
   const runner = makeRunner(
     context,
     (event) => {

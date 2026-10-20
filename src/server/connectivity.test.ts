@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_PROBE_URLS, makeConnectivity, needsInternet } from "./connectivity.ts";
-import { fakeDeps, testWatch } from "./testkit.ts";
+import { fakeDeps } from "./testkit.ts";
 
 const setup = (probeUrls?: ReadonlyArray<string>) => {
   const net = { up: true, calls: [] as Array<string> };
@@ -12,51 +12,64 @@ const setup = (probeUrls?: ReadonlyArray<string>) => {
       return new Response(null, { status: 204 });
     },
   });
-  const link = makeConnectivity(fake.deps, testWatch(fake.deps).store, () => probeUrls);
-  return { link, net, advance: fake.advance };
+  return { link: makeConnectivity(fake.deps, () => probeUrls), net, advance: fake.advance };
 };
 
 describe("connectivity", () => {
-  it("probes once for checks that fail together and reuses the answer for a minute", async () => {
+  it("shares one probe among checks that fail together, reused for 15 seconds", async () => {
     const { link, net, advance } = setup();
-    expect(await Promise.all([link.online(), link.online(), link.online()])).toEqual([true, true, true]);
+    expect(await Promise.all([link.hold(), link.hold(), link.hold()])).toEqual([false, false, false]);
     expect(net.calls).toEqual([...DEFAULT_PROBE_URLS]);
-    advance(30);
-    await link.online();
+    advance(10);
+    await link.hold();
     expect(net.calls).toHaveLength(2);
-    advance(31);
-    await link.online();
+    advance(6);
+    await link.hold();
     expect(net.calls).toHaveLength(4);
   });
 
-  it("goes offline when no probe address answers, and back online when a check passes", async () => {
+  it("holds while no probe address answers, until a check passes or the evidence lapses", async () => {
     const { link, net, advance } = setup();
     net.up = false;
-    expect(await link.online()).toBe(false);
+    expect(await link.hold()).toBe(true);
     expect(link.link().offlineSince).toBe("2026-10-15T10:00:00.000Z");
-    // Still offline a probe later, and it keeps the time it went offline.
-    advance(120);
-    expect(await link.online()).toBe(false);
+    // A later failed probe keeps the time the spell began.
+    advance(20);
+    expect(await link.hold()).toBe(true);
     expect(link.link().offlineSince).toBe("2026-10-15T10:00:00.000Z");
+    // A check that passes proves the link, even against the probe's reused answer.
     link.sawInternet();
     expect(link.link().offlineSince).toBeNull();
-    // A recent pass answers without a probe.
-    const probes = net.calls.length;
-    expect(await link.online()).toBe(true);
-    expect(net.calls).toHaveLength(probes);
+    expect(await link.hold()).toBe(false);
+    // Without a failed probe for 30 minutes, Watch stops counting itself offline.
+    advance(16);
+    expect(await link.hold()).toBe(true);
+    advance(31 * 60);
+    expect(link.link().offlineSince).toBeNull();
+  });
+
+  it("lets a pass outrank a probe that began before it", async () => {
+    const pending: Array<(error: Error) => void> = [];
+    const fake = fakeDeps({ fetch: () => new Promise<Response>((_resolve, reject) => pending.push(reject)) });
+    const link = makeConnectivity(fake.deps);
+    const held = link.hold();
+    link.sawInternet();
+    for (const reject of pending) reject(new TypeError("fetch failed"));
+    expect(await held).toBe(false);
+    expect(link.link().offlineSince).toBeNull();
   });
 
   it("probes the configured addresses, and an empty list never holds", async () => {
     const custom = setup(["https://probe.example/ok"]);
-    await custom.link.online();
+    await custom.link.hold();
     expect(custom.net.calls).toEqual(["https://probe.example/ok"]);
     const off = setup([]);
     off.net.up = false;
-    expect(await off.link.online()).toBe(true);
+    expect(await off.link.hold()).toBe(false);
     expect(off.net.calls).toEqual([]);
     // A malformed setting falls back to the defaults.
     const bad = setup(["ftp://probe.example/"]);
-    await bad.link.online();
+    await bad.link.hold();
     expect(bad.net.calls).toEqual([...DEFAULT_PROBE_URLS]);
   });
 

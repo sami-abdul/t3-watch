@@ -23,7 +23,7 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       // Then the result is held: kept in the history, with no new state and no event.
       if (needsInternet(fresh)) {
         if (result.outcome === "pass") link.sawInternet();
-        else if (!(await link.online())) {
+        else if (await link.hold()) {
           context.store.recordHeld(fresh, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
           return result;
         }

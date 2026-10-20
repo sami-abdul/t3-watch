@@ -24,8 +24,8 @@
 - [x] 4.1 `src/server/config.ts`, `src/server/connectivity.ts`, `src/server/connectivity.test.ts`:
       one loopback helper for both files; checks on the local network, the tailnet or `.local`
       names need no internet, so they are never held and never vouch for the link.
-- [ ] 4.2 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/runner.ts`,
-      `src/server/app.ts`: every failure probes, with answers reused for 15 seconds; the link state
+- [x] 4.2 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`, `src/server/runner.ts`,
+      `src/server/app.ts`, `src/server/chat.test.ts`: every failure probes, with answers reused for 15 seconds; the link state
       lives in memory, a pass outranks a probe that began before it, and offline lapses 30 minutes
       after the last failed probe.
 - [ ] 4.3 `src/server/connectivity.ts`, `src/server/config.ts`, `src/server/state.ts`,
