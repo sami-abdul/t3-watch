@@ -76,20 +76,29 @@ describe("probe", () => {
     return { server, port: (server.address() as AddressInfo).port };
   };
 
-  it("tells a running Watch from a refusal, a slow answer and nothing listening", async () => {
+  it("tells a running Watch from a refusal, another answer, a slow one and nothing listening", async () => {
     const checks = [{ state: "on", lastOutcome: "fail" }];
-    const running = await listen((_request, response) => response.end(JSON.stringify({ checks })));
-    const refusing = await listen((_request, response) => {
-      response.writeHead(401);
-      response.end("{}");
-    });
+    const respond = (status: number, body: string) =>
+      listen((_request, response) => {
+        response.writeHead(status);
+        response.end(body);
+      });
+    const running = await respond(200, JSON.stringify({ checks }));
+    const refusing = await respond(401, "{}");
+    const failing = await respond(500, "{}");
+    const page = await respond(200, "<!doctype html><p>Another app</p>");
+    const odd = await respond(200, JSON.stringify({ checks: [null] }));
     const stuck = await listen(() => {});
     try {
       expect(await probe(at(running.port))).toEqual({ kind: "running", checks });
       expect((await probe(at(refusing.port))).kind).toBe("refused");
+      // An error from Watch itself, or another program on the port, is not a refused token.
+      expect(await probe(at(failing.port))).toEqual({ kind: "unexpected", answer: "HTTP 500" });
+      expect((await probe(at(page.port))).kind).toBe("unexpected");
+      expect((await probe(at(odd.port))).kind).toBe("unexpected");
       expect((await probe(at(stuck.port), 200)).kind).toBe("slow");
     } finally {
-      for (const { server } of [running, refusing, stuck]) {
+      for (const { server } of [running, refusing, failing, page, odd, stuck]) {
         server.closeAllConnections();
         server.close();
       }

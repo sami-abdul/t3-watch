@@ -44,7 +44,7 @@
 - [x] 4.8 `src/server/http.ts`, `src/server/http.test.ts`: one body reader for JSON and forms.
 - [x] 4.9 `src/server/cli.ts`, `src/server/cli.test.ts`: `signout` says when a folder holds no Watch;
       `status` and `url` share one probe, and `url` words a slow Watch as unreachable, not absent.
-- [ ] 4.10 `src/server/cli.ts`, `src/server/cli.test.ts`: the probe tells a refused token (401 or
+- [x] 4.10 `src/server/cli.ts`, `src/server/cli.test.ts`: the probe tells a refused token (401 or
       403) from an error status and from a port that answers with something other than Watch's
       state, and checks each check's shape before status reads it.
 - [ ] 4.11 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` and `status` say when a folder holds

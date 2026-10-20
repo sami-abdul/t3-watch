@@ -85,15 +85,26 @@ const start = async () => {
 
 const PROBE_MS = 3000;
 
+export interface ProbeCheck {
+  readonly state: string;
+  readonly lastOutcome: string | null;
+}
+
 /**
- * What the local address says to this folder's token: a running Watch with its checks, a refusal
- * from something else listening there, no answer in time, or nothing listening at all.
+ * What the local address says to this folder's token: a running Watch with its checks, a refused
+ * token, an answer that is not Watch's state, no answer in time, or nothing listening at all.
  */
 export type Probe =
-  | { readonly kind: "running"; readonly checks: ReadonlyArray<{ state: string; lastOutcome: string | null }> }
+  | { readonly kind: "running"; readonly checks: ReadonlyArray<ProbeCheck> }
+  | { readonly kind: "unexpected"; readonly answer: string }
   | { readonly kind: "refused" | "slow" | "absent" };
 
 const timedOut = (error: unknown) => error instanceof Error && error.name === "TimeoutError";
+
+const isCheck = (value: unknown): value is ProbeCheck =>
+  typeof value === "object" && value !== null && typeof (value as { state?: unknown }).state === "string";
+
+const NOT_STATE = "something other than Watch's state";
 
 export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> => {
   let response: Response;
@@ -105,12 +116,18 @@ export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> 
   } catch (error) {
     return { kind: timedOut(error) ? "slow" : "absent" };
   }
-  if (!response.ok) return { kind: "refused" };
+  if (!response.ok) {
+    // An unread body would hold the connection open and keep the CLI from exiting.
+    void response.body?.cancel().catch(() => {});
+    return response.status === 401 || response.status === 403
+      ? { kind: "refused" }
+      : { kind: "unexpected", answer: `HTTP ${response.status}` };
+  }
   try {
-    const state = (await response.json()) as { checks?: unknown };
-    return Array.isArray(state.checks) ? { kind: "running", checks: state.checks as Extract<Probe, { kind: "running" }>["checks"] } : { kind: "refused" };
+    const checks = ((await response.json()) as { checks?: unknown } | null)?.checks;
+    return Array.isArray(checks) && checks.every(isCheck) ? { kind: "running", checks } : { kind: "unexpected", answer: NOT_STATE };
   } catch (error) {
-    return { kind: timedOut(error) ? "slow" : "refused" };
+    return timedOut(error) ? { kind: "slow" } : { kind: "unexpected", answer: NOT_STATE };
   }
 };
 
@@ -259,7 +276,9 @@ const status = async () => {
       ? `Watch did not answer at ${localUrl(config)} within ${PROBE_MS / 1000} seconds. It may be busy; try again.`
       : result.kind === "refused"
         ? `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${watchHome()}.`
-        : "Not running. Start it with t3-watch start, or t3-watch install.",
+        : result.kind === "unexpected"
+          ? `${localUrl(config)} answered with ${result.answer}. If that is Watch, its log says why; if not, another program holds the port.`
+          : "Not running. Start it with t3-watch start, or t3-watch install.",
   );
   process.exitCode = 1;
 };
