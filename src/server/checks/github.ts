@@ -68,9 +68,15 @@ export const runGitHub: CheckRunner = async (check, { deps }) => {
     if (run.status !== "completed" || IGNORED.has(run.conclusion ?? "")) continue;
     if (!latest.has(run.workflowName)) latest.set(run.workflowName, run);
   }
-  if (latest.size === 0) return unknown("No finished runs yet");
-  const failed = [...latest.values()].filter((run) => FAILED.has(run.conclusion));
   const where = c.branch === undefined ? c.repo : `${c.branch} in ${c.repo}`;
+  if (latest.size === 0) {
+    // A schedule that only gets skipped or cancelled has gone stale too.
+    const finished = runs.filter((run) => run.status === "completed").length;
+    return c.maxAgeSeconds !== undefined && finished > 0
+      ? { outcome: "fail", summary: `No successful run in the last ${finished} finished runs on ${where}`, evidence: { finished } }
+      : unknown("No finished runs yet");
+  }
+  const failed = [...latest.values()].filter((run) => FAILED.has(run.conclusion));
   if (failed.length > 0)
     return {
       outcome: "fail",

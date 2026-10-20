@@ -48,7 +48,10 @@ describe("check kinds", () => {
     runs = [{ ...runs[0]!, createdAt: "2026-10-15T05:00:00Z" }, ...runs];
     const fresh = await watch.runner.trial(check);
     expect([fresh.outcome, fresh.summary]).toEqual(["pass", "1 workflow passing on acme/site, last success 5 hours ago"]);
-    runs = runs.map((run) => ({ ...run, conclusion: "cancelled" }));
+    runs = runs.map((run) => ({ ...run, conclusion: "skipped" }));
+    const skipped = await watch.runner.trial(check);
+    expect([skipped.outcome, skipped.summary]).toEqual(["fail", "No successful run in the last 3 finished runs on acme/site"]);
+    runs = runs.map((run) => ({ ...run, status: "queued", conclusion: "" }));
     expect((await watch.runner.trial(check)).outcome).toBe("unknown");
   });
 

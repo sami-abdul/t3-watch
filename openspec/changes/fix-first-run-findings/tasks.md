@@ -43,7 +43,7 @@
       IPv6 host.
 - [x] 5.7 `src/web/Details.tsx`: the folder list shows a load error instead of falling back.
 - [x] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.
-- [ ] 5.9 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with `maxAgeSeconds`, finished
+- [x] 5.9 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with `maxAgeSeconds`, finished
       runs that were all skipped or cancelled fail as stale.
 - [ ] 5.10 `src/server/config.ts`, `src/server/config.test.ts`: `loadConfig` strips IPv6 brackets
       so `listen` gets a plain address.
