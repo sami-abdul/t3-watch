@@ -47,7 +47,7 @@
       runs that were all skipped or cancelled fail as stale.
 - [x] 5.10 `src/server/config.ts`, `src/server/config.test.ts`: `loadConfig` strips IPv6 brackets
       so `listen` gets a plain address.
-- [ ] 5.11 `src/server/cli.ts`: the install hint names the node binary install used, quoted.
+- [x] 5.11 `src/server/cli.ts`: the install hint names the node binary install used, quoted.
 - [ ] 5.12 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the page check
       accepts a forwarding proxy's host, and its comment states what it does not stop.
 - [ ] 5.13 `src/web/Details.tsx`: the folder list retries on each refresh until it loads.
