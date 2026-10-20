@@ -60,6 +60,7 @@ export function Details({
   const [makingSecret, setMakingSecret] = useState(false);
   // Replacing a secret while alerts are on stops them until the T3 task has the new one.
   const [confirmReplace, setConfirmReplace] = useState(false);
+  const replacing = confirmReplace && state.alerts.url !== null && state.alerts.signed;
   const [rootsError, setRootsError] = useState<string | null>(null);
   // Tries again on every refresh until the folder list loads.
   useEffect(() => {
@@ -192,7 +193,7 @@ export function Details({
               variant="secondary"
               loading={makingSecret}
               onClick={async () => {
-                if (state.alerts.url !== null && state.alerts.signed && !confirmReplace) {
+                if (state.alerts.url !== null && state.alerts.signed && !replacing) {
                   setConfirmReplace(true);
                   return;
                 }
@@ -202,16 +203,16 @@ export function Details({
                 setConfirmReplace(false);
               }}
             >
-              {confirmReplace ? "Replace the secret" : state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
+              {replacing ? "Replace the secret" : state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
             </Button>
-            {confirmReplace ? (
+            {replacing ? (
               <Button size="compact" variant="ghost" onClick={() => setConfirmReplace(false)}>
                 Cancel
               </Button>
             ) : null}
             {state.alerts.signed ? (
               <Muted className={typeClass("caption")}>
-                {confirmReplace
+                {replacing
                   ? "Alerts stop reaching your Watch thread until its T3 task has the new secret."
                   : "Replaces the current secret. Alerts fail until the T3 task has the new one."}
               </Muted>

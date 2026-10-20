@@ -51,7 +51,7 @@
 - [x] 5.12 `src/server/http.ts`, `src/server/extend.ts`, `src/server/chat.test.ts`: the page check
       accepts a forwarding proxy's host, and its comment states what it does not stop.
 - [x] 5.13 `src/web/Details.tsx`: the folder list retries on each refresh until it loads.
-- [ ] 5.14 `src/web/Details.tsx`: the replace prompt clears when alerts turn off.
+- [x] 5.14 `src/web/Details.tsx`: the replace prompt clears when alerts turn off.
 
 ## 6. Verification
 
