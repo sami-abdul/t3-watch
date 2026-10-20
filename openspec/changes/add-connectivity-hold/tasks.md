@@ -95,6 +95,6 @@
 - [x] 6.14 `src/server/mcp.ts`, `src/server/runner.test.ts`: the `watch_set_check` reply drops its
       unreachable pending line, since `watch_check` carries the pending run, and the probe-pause
       test waits on the probe instead of a timer.
-- [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
+- [x] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance, a check that fails once and then passes makes no event, and one that
       fails twice in a row makes one.
