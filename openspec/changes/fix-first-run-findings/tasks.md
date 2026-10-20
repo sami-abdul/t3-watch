@@ -7,7 +7,7 @@
 ## 2. Page
 
 - [x] 2.1 `src/web/ui.tsx`: drop the `m-0` resets that cancel `space-y-*`.
-- [ ] 2.2 `src/web/client.ts`, `src/web/Home.tsx`: Ask why falls back to showing the question.
+- [x] 2.2 `src/web/client.ts`, `src/web/Home.tsx`: Ask why falls back to showing the question.
 - [ ] 2.3 `src/web/client.ts`, `src/web/Details.tsx`, `src/web/app-entry.tsx`: the folder list
       reads `/api/settings`.
 

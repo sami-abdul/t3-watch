@@ -60,8 +60,13 @@ export const httpClient: WatchClient = {
     await post("/api/settings", { roots });
   },
   ask: async (text) => {
-    await navigator.clipboard.writeText(text);
-    return "Copied. Paste it into your Watch thread.";
+    try {
+      await navigator.clipboard.writeText(text);
+      return "Copied. Paste it into your Watch thread.";
+    } catch {
+      // Browsers give no clipboard to plain-HTTP pages other than localhost, such as a tailnet name.
+      return `Paste this into your Watch thread: ${text}`;
+    }
   },
   openPage: null,
 };
