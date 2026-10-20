@@ -64,9 +64,9 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Tests for each server change in `src/server/config.test.ts`, `src/server/chat.test.ts`,
+- [x] 6.1 Tests for each server change in `src/server/config.test.ts`, `src/server/chat.test.ts`,
       `src/server/scan.test.ts` and `src/server/checks.test.ts`; `pnpm test`.
-- [ ] 6.2 `pnpm typecheck`; `pnpm build`; `openspec validate fix-first-run-findings --strict`.
-- [ ] 6.3 On a running install: `t3-watch status` with a non-loopback host, the page in a
+- [x] 6.2 `pnpm typecheck`; `pnpm build`; `openspec validate fix-first-run-findings --strict`.
+- [x] 6.3 On a running install: `t3-watch status` with a non-loopback host, the page in a
       browser, Make a signing secret, and a GitHub check with `maxAgeSeconds` against a real
       scheduled workflow.
