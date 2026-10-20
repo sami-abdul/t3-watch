@@ -56,9 +56,9 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`;
+- [x] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`;
       `openspec validate add-sign-in-links-and-npm-package --strict`.
-- [ ] 5.2 `npm pack`; `npm install -g --prefix <scratch> <tarball>`; `t3-watch` help, start and
+- [x] 5.2 `npm pack`; `npm install -g --prefix <scratch> <tarball>`; `t3-watch` help, start and
       status from the scratch prefix.
-- [ ] 5.3 On the running install: a one-time link signs a browser in once and is refused the
+- [x] 5.3 On the running install: a one-time link signs a browser in once and is refused the
       second time; 127.0.0.1:8460 and the tailnet address both answer.
