@@ -19,10 +19,11 @@ pnpm install && pnpm build
 node bin/t3-watch.js install
 ```
 
-`install` runs Watch in the background at login (systemd on Linux, launchd on macOS) and adds its
-MCP server to Codex and Claude Code. Then run `node bin/t3-watch.js url` in your own terminal and
-open the link it prints once in each browser you use. The link carries the page's access token,
-so `install` and the service log never print it, and the Watch agent is told never to fetch it.
+`install` runs Watch in the background at login (systemd on Linux, launchd on macOS), adds its MCP
+server to Codex and Claude Code, and prints a sign-in link for the page. A sign-in link works
+once, within 10 minutes, so a copy left in a terminal, a log or a chat is useless after use. For
+each other browser, `node bin/t3-watch.js url` prints a new one, or ask your Watch thread for the
+page.
 
 On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
 page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8460 http://127.0.0.1:8460`)

@@ -1,7 +1,33 @@
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { shellQuote, systemdQuote } from "./cli.ts";
+import { useSignInCode } from "./signin.ts";
+import { openStore } from "./store.ts";
+
+describe("t3-watch url", () => {
+  it("prints a one-time link that never carries the access token", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-url-"));
+    try {
+      const cli = join(import.meta.dirname, "cli.ts");
+      const env = { ...process.env, T3_WATCH_HOME: home };
+      const link = execFileSync(process.execPath, [cli, "url"], { env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      const token = (JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as { token: string }).token;
+      expect(link).toMatch(/^http:\/\/127\.0\.0\.1:8460\/signin\?code=[A-Za-z0-9_-]{32}$/);
+      expect(link).not.toContain(token);
+      const store = openStore(join(home, "watch.sqlite"));
+      const code = new URL(link).searchParams.get("code")!;
+      expect(useSignInCode(store, code, new Date())).toBe(true);
+      expect(useSignInCode(store, code, new Date())).toBe(false);
+      store.close();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("cli quoting", () => {
   it("prints commands a shell reads back unchanged", () => {

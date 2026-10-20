@@ -4,9 +4,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeWatch } from "./app.ts";
-import { loadConfig, localUrl, pageUrl, signInLine, signInUrl, watchHome } from "./config.ts";
+import { loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
+import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
+import { openStore } from "./store.ts";
 import { extendServer } from "./extend.ts";
 
 const SERVICE = "t3-watch";
@@ -53,7 +55,7 @@ const start = async () => {
   watch.runner.start();
   extension.start();
   console.log(`t3-watch is running at ${pageUrl(config)}`);
-  console.log(signInLine(config, process.stdout.isTTY === true));
+  console.log("Sign in with a one-time link from: t3-watch url");
   const stop = () => {
     extension.stop();
     server.close();
@@ -62,6 +64,17 @@ const start = async () => {
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
+};
+
+/** A one-time sign-in link, made in Watch's database so the running service accepts it. */
+const freshSignInLink = (home: string) => {
+  const config = loadConfig(home);
+  const store = openStore(join(home, "watch.sqlite"));
+  try {
+    return signInLink(pageUrl(config), makeSignInCode(store, new Date()));
+  } finally {
+    store.close();
+  }
 };
 
 const binCommand = () => [process.execPath, join(packageRoot(), "bin", "t3-watch.js")];
@@ -162,7 +175,8 @@ WantedBy=default.target
   for (const line of await registerMcp()) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // Agents run install, and some agent shells are terminals, so install never prints the token.
-  console.log(`To sign in, run this in your own terminal and open the link once in each browser: ${shellQuote(node!)} ${shellQuote(bin!)} url`);
+  console.log(`Open this link within ${SIGN_IN_MINUTES} minutes to sign in. It works once: ${freshSignInLink(home)}`);
+  console.log(`For another browser, run: ${shellQuote(node!)} ${shellQuote(bin!)} url`);
   if (platform() === "linux")
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
 };
@@ -204,7 +218,7 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch start       Run the service in the foreground
   t3-watch install     Run it in the background at login and register it with Codex and Claude Code
   t3-watch uninstall   Undo install, keeping your data
-  t3-watch url         Print the sign-in link for the page
+  t3-watch url         Print a one-time sign-in link for the page
   t3-watch status      Say whether it is running and what is failing
   t3-watch mcp         MCP over stdio, for agents (install registers this)
 `;
@@ -215,7 +229,11 @@ export const main = async (args: ReadonlyArray<string>) => {
     if (command === "start") await start();
     else if (command === "install") await install();
     else if (command === "uninstall") await uninstall();
-    else if (command === "url") console.log(signInUrl(loadConfig()));
+    else if (command === "url") {
+      // The link alone on stdout, so scripts can take it; the note goes to stderr.
+      console.log(freshSignInLink(watchHome()));
+      console.error(`It works once, within ${SIGN_IN_MINUTES} minutes.`);
+    }
     else if (command === "status") await status();
     else if (command === "mcp") await (await import("./mcp-relay.ts")).relay();
     else console.log(HELP);
