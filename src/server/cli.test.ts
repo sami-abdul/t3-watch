@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +13,12 @@ describe("t3-watch url", () => {
     const home = mkdtempSync(join(tmpdir(), "t3w-url-"));
     try {
       const cli = join(import.meta.dirname, "cli.ts");
-      const env = { ...process.env, T3_WATCH_HOME: home };
-      const link = execFileSync(process.execPath, [cli, "url"], { env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      // Overrides in the developer's shell would change the address the link names.
+      const { T3_WATCH_PORT: _port, T3_WATCH_HOST: _host, ...rest } = process.env;
+      const run = spawnSync(process.execPath, [cli, "url"], { env: { ...rest, T3_WATCH_HOME: home }, encoding: "utf8" });
+      const link = run.stdout.trim();
+      // No Watch runs with this scratch folder, so the CLI says the link cannot work yet.
+      expect(run.stderr).toContain("No Watch answers for");
       const token = (JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as { token: string }).token;
       expect(link).toMatch(/^http:\/\/127\.0\.0\.1:8460\/signin\?code=[A-Za-z0-9_-]{32}$/);
       expect(link).not.toContain(token);

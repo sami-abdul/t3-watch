@@ -82,6 +82,19 @@ const start = async () => {
   process.on("SIGINT", stop);
 };
 
+/** Whether a running Watch accepts this folder's token, so a link made there will work. */
+const answersFor = async (config: ReturnType<typeof loadConfig>) => {
+  try {
+    const response = await fetch(`${localUrl(config)}/api/state`, {
+      headers: { authorization: `Bearer ${config.token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
 /** A one-time sign-in link, made in Watch's database so the running service accepts it. */
 const freshSignInLink = (home: string) => {
   const config = loadConfig(home);
@@ -256,9 +269,12 @@ export const main = async (args: ReadonlyArray<string>) => {
         store.close();
       }
     } else if (command === "url") {
-      // The link alone on stdout, so scripts can take it; the note goes to stderr.
-      console.log(freshSignInLink(watchHome()));
+      // The link alone on stdout, so scripts can take it; the notes go to stderr.
+      const home = watchHome();
+      console.log(freshSignInLink(home));
       console.error(`It works once, within ${SIGN_IN_MINUTES} minutes.`);
+      if (!(await answersFor(loadConfig(home))))
+        console.error(`No Watch answers for ${home}, so the link works only once Watch runs with that folder.`);
     }
     else if (command === "status") await status();
     else if (command === "mcp") await (await import("./mcp-relay.ts")).relay();

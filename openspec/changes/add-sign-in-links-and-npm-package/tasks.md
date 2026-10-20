@@ -33,7 +33,7 @@
       timeout comes before WAL; one write per sign-in try; making a code clears expired ones.
 - [x] 4.4 `src/server/http.ts`, `src/server/mcp.ts`, `src/server/cli.ts`: one expiry constant in
       every message; the install comment matches what it prints.
-- [ ] 4.5 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` warns when no Watch answers for
+- [x] 4.5 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` warns when no Watch answers for
       that folder; its test ignores port and host overrides.
 
 ## 5. Verification
