@@ -123,8 +123,31 @@ describe("alerts", () => {
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(1);
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
     const last = received.at(-1)!;
-    expect(JSON.parse(last.body).text).toContain("Site is up is failing");
+    expect(JSON.parse(last.body).text).toBe("Watch check failed: Site is up. Answered 500");
     expect(last.signature).toBe(`sha256=${createHmac("sha256", "a-signing-secret-1234").update(last.body).digest("hex")}`);
+  });
+
+  it("leads with the change, so an intent naming the healthy state still reads right", async () => {
+    let up = false;
+    const sent: Array<string> = [];
+    const fake = fakeDeps({
+      fetch: (url, init) => {
+        if (url.hostname === "x.test") return new Response("", { status: up ? 200 : 500 });
+        sent.push(JSON.parse(String(init.body)).text);
+        return jsonResponse(200, {});
+      },
+    });
+    const watch = testWatch(fake.deps);
+    setAlerts(watch, { url: "https://t3.example/hook" });
+    watch.upsertService({ id: "github:example/api", vendor: "github", label: "example/api", target: "example/api", reachable: true, note: null, foundIn: [] });
+    watch.defineCheck({ id: "ci", serviceId: "github:example/api", kind: "http", intent: "CI on main is passing", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
+    await watch.runner.tick();
+    up = true;
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(await deliverAlerts(watch, "https://watch.example")).toBe(2);
+    expect(sent[0]).toBe("Watch check failed: example/api: CI on main is passing. Answered 500");
+    expect(sent[1]).toMatch(/^Watch check passing again: example\/api: CI on main is passing\. Answered 200 in \d+ ms$/);
   });
 
   it("sends nothing while checks keep passing", async () => {

@@ -112,6 +112,8 @@ describe("scan", () => {
 
     const byId = new Map(scan.suggestions.map((s) => [s.checkId, s]));
     expect(byId.get("github:acme/api:ci")?.outcome).toBe("pass");
+    // The service label already names the repository.
+    expect(byId.get("github:acme/api:ci")?.intent).toBe("CI on main is passing");
     expect(byId.get("aws:123456789012:lambda-errors")?.outcome).toBe("pass");
     expect(byId.get("vendor:pipedrive:deals-moving")?.suggested).toBe(true);
     // Optional checks start unticked.

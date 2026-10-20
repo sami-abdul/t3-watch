@@ -328,7 +328,7 @@ export const runScan = async (
         if (runs.code === 0 && runs.stdout.trim() === "0") note = "No GitHub Actions runs yet";
         else
           proposed.push({
-            check: define(serviceId, `${serviceId}:ci`, "github", `CI on ${branch} in ${repo} is passing`, { repo, branch }, null, 900),
+            check: define(serviceId, `${serviceId}:ci`, "github", `CI on ${branch} is passing`, { repo, branch }, null, 900),
             title: repo,
             optional: false,
           });

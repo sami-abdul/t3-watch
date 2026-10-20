@@ -33,8 +33,10 @@ export const setAlerts = (watch: WatchCore, input: { url: string | null; secret?
 export const eventPayload = (watch: WatchCore, event: ChangeEvent, pageUrl: string) => {
   const check = watch.store.check(event.checkId);
   const service = check === null ? null : watch.store.service(check.serviceId);
-  const label = `${service?.label ?? "Watch"}: ${check?.intent ?? event.checkId}`;
-  const verb = event.to === "fail" ? "is failing" : event.to === "pass" ? "is passing again" : "could not run";
+  const label = [service?.label, check?.intent ?? event.checkId].filter(Boolean).join(": ");
+  // Intents name the healthy state ("CI on main is passing"), so the change leads the sentence.
+  const what =
+    event.to === "fail" ? "Watch check failed" : event.to === "pass" ? "Watch check passing again" : "Watch check could not run";
   return {
     kind: "watch.change",
     checkId: event.checkId,
@@ -45,7 +47,7 @@ export const eventPayload = (watch: WatchCore, event: ChangeEvent, pageUrl: stri
     summary: event.summary,
     at: event.at,
     page: pageUrl,
-    text: `Watch: ${label} ${verb}. ${event.summary}`,
+    text: `${what}: ${label}. ${event.summary}`,
   };
 };
 
