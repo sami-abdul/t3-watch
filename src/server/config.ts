@@ -21,6 +21,9 @@ const defaultRoots = () =>
     .map((name) => join(homedir(), name))
     .filter((dir) => existsSync(dir));
 
+/** An IPv6 address without the brackets URLs put around it, the form listen() wants. */
+const bareHost = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
+
 /** Reads config.json, creating it with a fresh token on first use. */
 export const loadConfig = (home = watchHome()): WatchConfig => {
   mkdirSync(home, { recursive: true, mode: 0o700 });
@@ -30,8 +33,7 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
     : {};
   const config: WatchConfig = {
     port: Number(process.env.T3_WATCH_PORT ?? stored.port ?? 8460),
-    // listen() wants a bare IPv6 address, not the bracketed form URLs use.
-    host: (process.env.T3_WATCH_HOST ?? stored.host ?? "127.0.0.1").replace(/^\[(.*)\]$/, "$1"),
+    host: bareHost(process.env.T3_WATCH_HOST ?? stored.host ?? "127.0.0.1"),
     token: stored.token ?? randomBytes(24).toString("base64url"),
     roots: stored.roots ?? defaultRoots(),
     publicUrl: stored.publicUrl ?? null,
@@ -48,7 +50,7 @@ export const saveConfig = (config: WatchConfig, home = watchHome()) => {
 
 /** Where tools on this machine reach the service: its own address, or loopback when it listens everywhere. */
 export const localUrl = (config: WatchConfig) => {
-  const bare = config.host.replace(/^\[(.*)\]$/, "$1");
+  const bare = bareHost(config.host);
   const host = bare === "0.0.0.0" || bare === "::" ? "127.0.0.1" : bare;
   return `http://${host.includes(":") ? `[${host}]` : host}:${config.port}`;
 };
