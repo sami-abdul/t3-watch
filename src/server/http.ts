@@ -47,10 +47,15 @@ export const isAuthorized = (request: IncomingMessage, token: string, store: Sto
   return hasPageSession(request, store, now);
 };
 
-/** A request the page made from its own origin, not another site or a script without an Origin. */
+/**
+ * A request the page made from its own origin, not another site or a script without an Origin.
+ * Browsers set Sec-Fetch-Site themselves and a page cannot forge it, so same-origin settles it,
+ * even where a privacy setting sends Origin: null or a proxy rewrites Host. Browsers that leave it
+ * out, as Chrome does over plain HTTP off localhost, are judged by their Origin.
+ */
 export const fromPage = (request: IncomingMessage, publicUrl: string | null) => {
   const site = request.headers["sec-fetch-site"];
-  if (site !== undefined && site !== "same-origin") return false;
+  if (site !== undefined) return site === "same-origin";
   const origin = request.headers.origin;
   const host = request.headers.host;
   if (origin === undefined) return false;

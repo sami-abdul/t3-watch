@@ -73,6 +73,23 @@ describe("http", () => {
     expect((await fetch(`${base}/signin?token=test-token-123`)).status).toBe(401);
   });
 
+  it("takes the browser's word on where a press came from", async () => {
+    const { base, watch } = await serve();
+    const press = (headers: Record<string, string>) =>
+      fetch(`${base}/signin`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+        body: new URLSearchParams({ code: makeSignInCode(watch.store, watch.deps.now()) }).toString(),
+      });
+    // same-origin settles it before Origin or Host are read, so Origin: null from a privacy setting
+    // or a Host rewritten by a proxy no longer locks anyone out.
+    expect((await press({ "sec-fetch-site": "same-origin", origin: "null" })).status).toBe(302);
+    // Another site or a sibling port is refused even when its Origin looks right.
+    expect((await press({ "sec-fetch-site": "cross-site", origin: base })).status).toBe(403);
+    expect((await press({ "sec-fetch-site": "same-site", origin: base })).status).toBe(403);
+  });
+
   it("refuses a form or JSON body over its limit", async () => {
     const { base } = await serve();
     const form = await fetch(`${base}/signin`, {
