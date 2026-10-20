@@ -42,7 +42,7 @@
 - [ ] 5.6 `src/server/config.ts`, `src/server/config.test.ts`: `localUrl` accepts a bracketed
       IPv6 host.
 - [ ] 5.7 `src/web/Details.tsx`: the folder list shows a load error instead of falling back.
-- [ ] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.
+- [x] 5.8 `src/server/mcp.ts`: every structured result carries the text summary.
 
 ## 6. Verification
 

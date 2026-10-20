@@ -33,7 +33,8 @@ const SECRET_REFUSED =
 
 const text = (value: string, structured?: Record<string, unknown>) => ({
   content: [{ type: "text" as const, text: value }],
-  ...(structured === undefined ? {} : { structuredContent: structured }),
+  // Some clients, Claude Code among them, show the model only the structured content.
+  ...(structured === undefined ? {} : { structuredContent: { summary: value, ...structured } }),
 });
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 const failure = (error: unknown) => ({
@@ -83,9 +84,7 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
       _meta: { ui: { resourceUri: HOME_URI } },
     },
     async () => {
-      const summary = homeText(readState(watch));
-      // Some clients, Claude Code among them, show the model only the structured content.
-      return text(summary, { summary, pageUrl: options.pageUrl() });
+      return text(homeText(readState(watch)), { pageUrl: options.pageUrl() });
     },
   );
 
