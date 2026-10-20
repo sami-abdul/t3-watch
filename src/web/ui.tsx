@@ -21,7 +21,7 @@ export function Heading({ children, as = "h2" }: { readonly children: ReactNode;
   const Tag = as;
   return (
     <Tag
-      className={cn("m-0 text-foreground", typeClass(as === "h1" ? "display" : "subtitle"))}
+      className={cn("text-foreground", typeClass(as === "h1" ? "display" : "subtitle"))}
       style={{ fontVariationSettings: as === "h1" ? fontWeights.bold : fontWeights.semibold }}
     >
       {children}
@@ -30,7 +30,7 @@ export function Heading({ children, as = "h2" }: { readonly children: ReactNode;
 }
 
 export function Muted({ children, className }: { readonly children: ReactNode; readonly className?: string }) {
-  return <p className={cn("m-0 text-muted-foreground", typeClass("body"), className)}>{children}</p>;
+  return <p className={cn("text-muted-foreground", typeClass("body"), className)}>{children}</p>;
 }
 
 /** The check mark draws in on tick and retracts on untick, as in the Fluid checkbox. */
@@ -164,7 +164,7 @@ export function RowList({ label, rows }: { readonly label: string; readonly rows
       onMouseEnter={hover.handlers.onMouseEnter}
       onMouseMove={hover.handlers.onMouseMove}
       onMouseLeave={hover.handlers.onMouseLeave}
-      className={cn("relative m-0 list-none border border-border p-1", shape.container)}
+      className={cn("relative list-none border border-border p-1", shape.container)}
     >
       <FluidHoverHighlight hover={hover} className={shape.bg} />
       {rows.map(({ key, ...row }, index) => (
