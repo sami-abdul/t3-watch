@@ -1,10 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { shellQuote, systemdQuote } from "./cli.ts";
+import { probe, shellQuote, systemdQuote } from "./cli.ts";
+import type { WatchConfig } from "./config.ts";
 import { isSession, startSession, useSignInCode } from "./signin.ts";
 import { openStore } from "./store.ts";
 
@@ -49,6 +52,50 @@ describe("t3-watch signout", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it("says when the folder holds no Watch, and makes no database there", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-signout-none-"));
+    try {
+      const cli = join(import.meta.dirname, "cli.ts");
+      const run = spawnSync(process.execPath, [cli, "signout"], { env: { ...process.env, T3_WATCH_HOME: home }, encoding: "utf8" });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain("No Watch in");
+      expect(existsSync(join(home, "watch.sqlite"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("probe", () => {
+  const at = (port: number): WatchConfig => ({ port, host: "127.0.0.1", token: "t", roots: [], publicUrl: null });
+  const listen = async (handler: (request: IncomingMessage, response: ServerResponse) => void) => {
+    const server = createServer(handler);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return { server, port: (server.address() as AddressInfo).port };
+  };
+
+  it("tells a running Watch from a refusal, a slow answer and nothing listening", async () => {
+    const checks = [{ state: "on", lastOutcome: "fail" }];
+    const running = await listen((_request, response) => response.end(JSON.stringify({ checks })));
+    const refusing = await listen((_request, response) => {
+      response.writeHead(401);
+      response.end("{}");
+    });
+    const stuck = await listen(() => {});
+    try {
+      expect(await probe(at(running.port))).toEqual({ kind: "running", checks });
+      expect((await probe(at(refusing.port))).kind).toBe("refused");
+      expect((await probe(at(stuck.port), 200)).kind).toBe("slow");
+    } finally {
+      for (const { server } of [running, refusing, stuck]) {
+        server.closeAllConnections();
+        server.close();
+      }
+    }
+    // The refusing server's port, now closed, has nothing listening.
+    expect((await probe(at(refusing.port))).kind).toBe("absent");
   });
 });
 

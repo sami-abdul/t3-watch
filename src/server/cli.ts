@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeWatch } from "./app.ts";
+import type { WatchConfig } from "./config.ts";
 import { listenHosts, loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
@@ -82,16 +83,34 @@ const start = async () => {
   process.on("SIGINT", stop);
 };
 
-/** Whether a running Watch accepts this folder's token, so a link made there will work. */
-const answersFor = async (config: ReturnType<typeof loadConfig>) => {
+const PROBE_MS = 3000;
+
+/**
+ * What the local address says to this folder's token: a running Watch with its checks, a refusal
+ * from something else listening there, no answer in time, or nothing listening at all.
+ */
+export type Probe =
+  | { readonly kind: "running"; readonly checks: ReadonlyArray<{ state: string; lastOutcome: string | null }> }
+  | { readonly kind: "refused" | "slow" | "absent" };
+
+const timedOut = (error: unknown) => error instanceof Error && error.name === "TimeoutError";
+
+export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> => {
+  let response: Response;
   try {
-    const response = await fetch(`${localUrl(config)}/api/state`, {
+    response = await fetch(`${localUrl(config)}/api/state`, {
       headers: { authorization: `Bearer ${config.token}` },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(ms),
     });
-    return response.ok;
-  } catch {
-    return false;
+  } catch (error) {
+    return { kind: timedOut(error) ? "slow" : "absent" };
+  }
+  if (!response.ok) return { kind: "refused" };
+  try {
+    const state = (await response.json()) as { checks?: unknown };
+    return Array.isArray(state.checks) ? { kind: "running", checks: state.checks as Extract<Probe, { kind: "running" }>["checks"] } : { kind: "refused" };
+  } catch (error) {
+    return { kind: timedOut(error) ? "slow" : "refused" };
   }
 };
 
@@ -228,19 +247,21 @@ const uninstall = async () => {
 
 const status = async () => {
   const config = loadConfig();
-  try {
-    const response = await fetch(`${localUrl(config)}/api/state`, {
-      headers: { authorization: `Bearer ${config.token}` },
-      signal: AbortSignal.timeout(3000),
-    });
-    const state = (await response.json()) as { checks: Array<{ state: string; lastOutcome: string | null }> };
-    const on = state.checks.filter((c) => c.state === "on");
+  const result = await probe(config);
+  if (result.kind === "running") {
+    const on = result.checks.filter((c) => c.state === "on");
     const failing = on.filter((c) => c.lastOutcome === "fail").length;
     console.log(`Running. ${on.length} checks on, ${failing} failing. ${pageUrl(config)}`);
-  } catch {
-    console.log("Not running. Start it with t3-watch start, or t3-watch install.");
-    process.exitCode = 1;
+    return;
   }
+  console.log(
+    result.kind === "slow"
+      ? `Watch did not answer at ${localUrl(config)} within ${PROBE_MS / 1000} seconds. It may be busy; try again.`
+      : result.kind === "refused"
+        ? `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${watchHome()}.`
+        : "Not running. Start it with t3-watch start, or t3-watch install.",
+  );
+  process.exitCode = 1;
 };
 
 const HELP = `t3-watch: watches the systems you run.
@@ -261,7 +282,15 @@ export const main = async (args: ReadonlyArray<string>) => {
     else if (command === "install") await install();
     else if (command === "uninstall") await uninstall();
     else if (command === "signout") {
-      const store = openStore(join(watchHome(), "watch.sqlite"));
+      const home = watchHome();
+      const database = join(home, "watch.sqlite");
+      // Opening the store would make an empty one, and "Signed out 0 browsers" would hide the typo.
+      if (!existsSync(database)) {
+        console.error(`No Watch in ${home}, so there is no browser to sign out.`);
+        process.exitCode = 1;
+        return;
+      }
+      const store = openStore(database);
       try {
         const ended = store.clearSessions();
         console.log(`Signed out ${ended} browser${ended === 1 ? "" : "s"}. Agents keep working. Sign in again with t3-watch url.`);
@@ -273,7 +302,10 @@ export const main = async (args: ReadonlyArray<string>) => {
       const home = watchHome();
       console.log(freshSignInLink(home));
       console.error(`It works once, within ${SIGN_IN_MINUTES} minutes.`);
-      if (!(await answersFor(loadConfig(home))))
+      const result = await probe(loadConfig(home));
+      if (result.kind === "slow")
+        console.error(`Watch did not answer within ${PROBE_MS / 1000} seconds, so this link is unchecked. It works if Watch is running with ${home}.`);
+      else if (result.kind !== "running")
         console.error(`No Watch answers for ${home}, so the link works only once Watch runs with that folder.`);
     }
     else if (command === "status") await status();
