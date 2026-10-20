@@ -5,16 +5,21 @@ import { type CheckRunner, unknown } from "./types.ts";
 
 const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
 const argument = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_./ -]{0,199}$/);
-export const GitHubConfig = z.object({
-  repo: repoName,
-  branch: argument.optional(),
-  workflow: argument.optional(),
-  /**
-   * Also fail when the newest successful run started longer ago than this. For scheduled
-   * workflows, whose last result stays green after GitHub skips or disables the schedule.
-   */
-  maxAgeSeconds: z.number().int().min(300).max(90 * 86400).optional(),
-});
+export const GitHubConfig = z
+  .object({
+    repo: repoName,
+    branch: argument.optional(),
+    workflow: argument.optional(),
+    /**
+     * Also fail when the workflow's newest successful run started longer ago than this. For
+     * scheduled workflows, whose last result stays green after GitHub skips or disables them.
+     */
+    maxAgeSeconds: z.number().int().min(300).max(90 * 86400).optional(),
+  })
+  .refine((c) => c.maxAgeSeconds === undefined || c.workflow !== undefined, {
+    message: "maxAgeSeconds needs a workflow, or another workflow's success would hide a stalled schedule",
+    path: ["maxAgeSeconds"],
+  });
 
 interface RunRow {
   readonly status: string;
@@ -75,14 +80,9 @@ export const runGitHub: CheckRunner = async (check, { deps }) => {
   const passing = `${latest.size} workflow${latest.size === 1 ? "" : "s"} passing on ${where}`;
   if (c.maxAgeSeconds === undefined)
     return { outcome: "pass", summary: passing, evidence: { workflows: [...latest.keys()] } };
-  const lastSuccessAt = runs
-    .filter((run) => run.status === "completed" && run.conclusion === "success")
-    .map((run) => run.createdAt)
-    .filter((at) => !Number.isNaN(Date.parse(at)))
-    .toSorted()
-    .at(-1);
-  if (lastSuccessAt === undefined)
-    return { outcome: "fail", summary: `No successful run in the last ${runs.length} on ${where}`, evidence: { workflows: [...latest.keys()] } };
+  // No run failed, so the latest finished run of the one workflow is its newest success.
+  const lastSuccessAt = [...latest.values()][0]!.createdAt;
+  if (Number.isNaN(Date.parse(lastSuccessAt))) return unknown("gh gave no start time for the latest run");
   const age = (deps.now().getTime() - Date.parse(lastSuccessAt)) / 1000;
   if (age > c.maxAgeSeconds)
     return {

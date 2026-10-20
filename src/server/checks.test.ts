@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { GitHubConfig } from "./checks/github.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
 
 const base = { cadenceSeconds: 300, keyId: null, origin: "user" as const };
@@ -49,6 +50,11 @@ describe("check kinds", () => {
     expect([fresh.outcome, fresh.summary]).toEqual(["pass", "1 workflow passing on acme/site, last success 5 hours ago"]);
     runs = runs.map((run) => ({ ...run, conclusion: "cancelled" }));
     expect((await watch.runner.trial(check)).outcome).toBe("unknown");
+  });
+
+  it("github refuses maxAgeSeconds without a workflow", () => {
+    expect(GitHubConfig.safeParse({ repo: "acme/site", maxAgeSeconds: 21600 }).success).toBe(false);
+    expect(GitHubConfig.safeParse({ repo: "acme/site", workflow: "refresh.yml", maxAgeSeconds: 21600 }).success).toBe(true);
   });
 
   it("github says to install gh when it is missing", async () => {

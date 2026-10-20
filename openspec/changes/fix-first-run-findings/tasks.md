@@ -29,7 +29,7 @@
 
 ## 5. Review follow-ups
 
-- [ ] 5.1 `src/server/checks/github.ts`, `src/server/checks.test.ts`, `src/server/mcp.ts`,
+- [x] 5.1 `src/server/checks/github.ts`, `src/server/checks.test.ts`, `src/server/mcp.ts`,
       `README.md`: `maxAgeSeconds` needs `workflow`, so another workflow's success cannot hide a
       stalled schedule.
 - [ ] 5.2 `src/server/mcp.ts`, `src/server/chat.test.ts`: `watch_set_alerts` reads `secret: null`

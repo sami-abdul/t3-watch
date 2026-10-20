@@ -192,7 +192,7 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
     {
       description: `Drafts a check. Watch validates it and runs it once; it stays a draft until the person turns it on. Kinds and config:
 - http: { url, expectStatus?, contains? }
-- github: { repo: "owner/name", branch?, workflow?, maxAgeSeconds? } (maxAgeSeconds also fails when the newest successful run is older, for scheduled workflows)
+- github: { repo: "owner/name", branch?, workflow?, maxAgeSeconds? } (maxAgeSeconds needs workflow and also fails when that workflow's newest successful run is older, for scheduled workflows)
 - aws_metric: { profile?, region, namespace, metric, dimensions?: [{name,value}], statistic, periodSeconds, windowSeconds, comparison, threshold, missingIsOk? } (comparison is the failure condition)
 - heartbeat: { periodSeconds, graceSeconds? } (Watch makes the ping URL)
 - vendor: { vendor, check } (a check id from the vendor's description; needs a key added on the page)`,
