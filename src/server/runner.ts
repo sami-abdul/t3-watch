@@ -19,21 +19,26 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       const fresh = context.store.check(check.id);
       if (fresh === null) return null;
       const nextRunAt = new Date(finished.getTime() + fresh.cadenceSeconds * 1000).toISOString();
-      // A failure that would change the check's state may only mean Watch's own link is down. Then it
-      // is held, kept in the history with no new state and no event, for at most an hour in a row.
+      // A failure may only mean Watch's own link is down. One that would change the check's state
+      // probes; one that changes nothing probes only while Watch already counts itself offline,
+      // which keeps the notice true and the check's real failure reason in place. Held runs keep
+      // the check as it was, with no event, for at most an hour of the check's runs in a row.
+      let recorded = result;
       if (result.outcome === "pass") {
-        if (provesInternet(fresh)) link.sawInternet();
-      } else if (heldWhenOffline(fresh) && changesState(fresh.lastOutcome, result.outcome)) {
-        const heldSince = context.store.heldSince(fresh.id);
-        const capped = heldSince !== null && finished.getTime() - Date.parse(heldSince) > MAX_HOLD_MS;
-        if (!capped && (await link.hold())) {
+        if (provesInternet(fresh, context.vendors())) link.sawInternet();
+      } else if (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline())) {
+        const offline = await link.hold();
+        const capped = context.store.heldStreak(fresh.id) >= Math.ceil(MAX_HOLD_MS / 1000 / fresh.cadenceSeconds);
+        if (offline && !capped) {
           context.store.recordHeld(fresh, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);
           return result;
         }
+        // Past the cap the run is recorded, marked so the streak goes on while Watch stays offline.
+        if (offline) recorded = { ...result, evidence: { ...result.evidence, heldTooLong: true } };
       }
       const event = context.store.recordRun(
         fresh,
-        result,
+        recorded,
         finished.toISOString(),
         finished.getTime() - started.getTime(),
         nextRunAt,

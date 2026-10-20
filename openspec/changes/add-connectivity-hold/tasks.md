@@ -42,6 +42,16 @@
       says so.
 - [x] 4.6 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`: only a failure
       that would change the check's state probes.
+- [x] 4.7 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`,
+      `src/server/chat.test.ts`: the cap counts an hour of the check's runs in one query, and a run
+      recorded past it keeps the streak going while Watch stays offline.
+- [x] 4.8 `src/server/runner.ts`, `src/server/connectivity.ts`, `src/server/runner.test.ts`: while
+      Watch counts itself offline, a repeat failure probes and is held too, which keeps the notice
+      up and the check's real failure reason in place.
+- [x] 4.9 `src/server/hosts.ts`, `src/server/hosts.test.ts`, `src/server/config.ts`,
+      `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: unspecified addresses are this
+      machine, the tailnet folds into the local network, `bareHost` lives in `hosts.ts`, vendor
+      checks count by their API origin, and a check whose address does not parse is not held.
 
 ## 5. Verification
 

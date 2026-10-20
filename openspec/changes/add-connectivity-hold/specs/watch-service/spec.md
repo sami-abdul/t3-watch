@@ -7,13 +7,16 @@ internet before recording the result, by probing its probe addresses and countin
 within 5 seconds as online. A probe's answer SHALL be reused for 15 seconds, so checks that fail
 together share one probe, and a check that passes after a probe began SHALL outrank that probe. While Watch is offline, such a result SHALL be
 held: the run SHALL be kept in the check's history marked as held, the check SHALL keep its last
-result, and no change event or alert SHALL be made. Watch SHALL probe only for a result that
-would change the check's state. Heartbeat checks and HTTP checks on this machine SHALL never be
-held; checks on the local network or the tailnet SHALL be held like the rest, and only a pass from
-a check that reaches the internet SHALL count as proof that Watch is online. Watch SHALL remember
+result, and no change event or alert SHALL be made. Watch SHALL probe for a result that would
+change the check's state, and, while it already counts itself offline, for any failure, which it
+SHALL hold too. Heartbeat checks, checks on this machine and checks whose address does not parse
+SHALL never be held; checks on the local network or the tailnet SHALL be held like the rest, and
+only a pass from a check that reaches the internet SHALL count as proof that Watch is online. A
+vendor check SHALL count by its vendor's API origin. Watch SHALL remember
 when it went offline and SHALL count itself online again when a probe answers, when such a check
-passes, or 30 minutes after its last failed probe. A check's failures SHALL be held at most an
-hour in a row, counted from its first held run, and then SHALL be recorded as usual.
+passes, or 30 minutes after its last failed probe. A check's failures SHALL be held for at most
+an hour of its runs in a row, so time Watch spends stopped does not count, and then SHALL be
+recorded as usual; a run recorded that way SHALL NOT end the streak while Watch stays offline.
 
 #### Scenario: The link is down
 

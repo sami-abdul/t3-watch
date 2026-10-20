@@ -129,6 +129,40 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
   });
 
+  it("keeps a failing check's real reason once Watch knows it is offline", async () => {
+    const { watch, net, advance } = setup();
+    watch.defineCheck(
+      { id: "other", serviceId: "s", kind: "http", intent: "Another site answers", config: { url: "https://other.example/" }, keyId: null, cadenceSeconds: 60, origin: "user" },
+      "on",
+    );
+    net.site = false;
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastSummary).toMatch(/503/);
+    // The link drops and the other site's failure shows Watch is offline before the site runs again.
+    net.up = false;
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.link().offlineSince).not.toBeNull();
+    advance(250);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastSummary).toMatch(/503/);
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch could not reach the internet/);
+  });
+
+  it("keeps a check capped while Watch stays offline", async () => {
+    const { watch, net, advance } = setup();
+    await watch.runner.tick();
+    net.up = false;
+    for (let i = 0; i < 14; i++) {
+      advance(301);
+      await watch.runner.tick();
+    }
+    // The cap recorded the failure; the next one is recorded too, marked, with no second event.
+    expect(watch.store.check("site")!.lastOutcome).toBe("fail");
+    expect(watch.store.runs("site")[0]!.evidence).toMatchObject({ heldTooLong: true });
+    expect(watch.store.events()).toHaveLength(1);
+  });
+
   it("does not probe for a failure that changes nothing", async () => {
     const { watch, net, advance } = setup();
     net.site = false;

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { isLoopbackHost } from "./hosts.ts";
+import { bareHost, isLoopbackHost } from "./hosts.ts";
 
 export interface WatchConfig {
   readonly port: number;
@@ -27,9 +27,6 @@ const defaultRoots = () =>
   ["Projects", "projects", "code", "src", "dev", "repos"]
     .map((name) => join(homedir(), name))
     .filter((dir) => existsSync(dir));
-
-/** An IPv6 address without the brackets URLs put around it, the form listen() wants. */
-export const bareHost = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
 
 /** Reads config.json, creating it with a fresh token on first use. */
 export const loadConfig = (home = watchHome()): WatchConfig => {
@@ -72,7 +69,7 @@ export const pageUrl = (config: WatchConfig) => config.publicUrl ?? localUrl(con
  */
 export const listenHosts = (config: WatchConfig) => {
   const host = bareHost(config.host);
-  const loopbackOrAll = host === "0.0.0.0" || host === "::" || isLoopbackHost(host);
-  return loopbackOrAll ? [host] : [host, "127.0.0.1"];
+  // Loopback and the unspecified addresses, which listen everywhere, need no second listener.
+  return isLoopbackHost(host) ? [host] : [host, "127.0.0.1"];
 };
 

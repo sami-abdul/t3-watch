@@ -78,15 +78,23 @@ describe("connectivity", () => {
   it("holds every check but heartbeats and this machine's, and only internet passes prove the link", () => {
     const http = (url: string) => ({ kind: "http" as const, config: { url } });
     expect(heldWhenOffline({ kind: "heartbeat", config: {} })).toBe(false);
-    expect(heldWhenOffline(http("http://127.0.0.1:8080/"))).toBe(false);
-    for (const url of ["http://192.168.1.10/", "https://leviathan.tail5ed0f2.ts.net:8461/", "https://example.com/", "not a url"])
+    // This machine, and a check that fails on its own settings, are never held.
+    for (const url of ["http://127.0.0.1:8080/", "http://0.0.0.0:8460/", "not a url"]) expect(heldWhenOffline(http(url)), url).toBe(false);
+    for (const url of ["http://192.168.1.10/", "https://leviathan.tail5ed0f2.ts.net:8461/", "https://example.com/"])
       expect(heldWhenOffline(http(url)), url).toBe(true);
     expect(heldWhenOffline({ kind: "github", config: {} })).toBe(true);
     // A pass on the local network or the tailnet says nothing about the internet.
     for (const url of ["http://127.0.0.1/", "http://nas.local/", "http://100.65.64.7:8460/", "not a url"])
       expect(provesInternet(http(url)), url).toBe(false);
     expect(provesInternet(http("https://example.com/"))).toBe(true);
-    expect(provesInternet({ kind: "vendor", config: {} })).toBe(true);
+    // A vendor check counts by its vendor's API origin.
+    const vendors = new Map([
+      ["public", { api: { origin: "https://api.vendor.example" } }],
+      ["lan", { api: { origin: "https://svc.tail5ed0f2.ts.net" } }],
+    ]);
+    expect(provesInternet({ kind: "vendor", config: { vendor: "public" } }, vendors)).toBe(true);
+    expect(provesInternet({ kind: "vendor", config: { vendor: "lan" } }, vendors)).toBe(false);
+    expect(heldWhenOffline({ kind: "vendor", config: { vendor: "lan" } }, vendors)).toBe(true);
     expect(provesInternet({ kind: "heartbeat", config: {} })).toBe(false);
   });
 });

@@ -16,7 +16,10 @@ const PROBE_REUSE_MS = 15_000;
 const PROBE_TIMEOUT_MS = 5000;
 /** Without a newer failed probe, Watch stops counting itself offline after this long. */
 const OFFLINE_LAPSE_MS = 30 * 60_000;
-/** A check's failures are held at most this long in a row, so a wrong probe list cannot hide them for good. */
+/**
+ * A check's failures are held for at most this much of its own cadence in a row, so a wrong probe
+ * list cannot hide them for good. Counted in runs, so time Watch spends stopped does not count.
+ */
 export const MAX_HOLD_MS = 60 * 60_000;
 
 export interface Link {
@@ -24,26 +27,38 @@ export interface Link {
   readonly offlineSince: string | null;
 }
 
-const httpHost = (check: Pick<Check, "config">) => URL.parse(String(check.config.url ?? ""))?.hostname ?? null;
+type Vendors = ReadonlyMap<string, { readonly api?: { readonly origin: string } }>;
+
+/**
+ * The host a check reaches: an HTTP check's URL or a vendor's API origin. Null for GitHub and AWS,
+ * which are on the internet; undefined when the address is missing or does not parse.
+ */
+const targetHost = (check: Pick<Check, "kind" | "config">, vendors: Vendors): string | null | undefined => {
+  if (check.kind === "http") return URL.parse(String(check.config.url ?? ""))?.hostname;
+  if (check.kind === "vendor") {
+    const origin = vendors.get(String(check.config.vendor ?? ""))?.api?.origin;
+    return origin === undefined ? undefined : URL.parse(origin)?.hostname;
+  }
+  return null;
+};
 
 /**
  * Whether Watch holds this check's failures while it is offline. Heartbeats, which need no network,
- * and checks on this machine are never held; the local network and the tailnet are, since Watch's
- * alerts could not leave the machine either.
+ * checks on this machine and checks whose address does not parse, which fail on their settings,
+ * are never held; the local network and the tailnet are, since Watch's alerts could not leave the
+ * machine either.
  */
-export const heldWhenOffline = (check: Pick<Check, "kind" | "config">) => {
+export const heldWhenOffline = (check: Pick<Check, "kind" | "config">, vendors: Vendors = new Map()) => {
   if (check.kind === "heartbeat") return false;
-  if (check.kind !== "http") return true;
-  const host = httpHost(check);
-  return host === null || hostClass(host) !== "loopback";
+  const host = targetHost(check, vendors);
+  return host === null || (host !== undefined && hostClass(host) !== "loopback");
 };
 
 /** Whether this check passing proves Watch reaches the internet, not just its own network or tailnet. */
-export const provesInternet = (check: Pick<Check, "kind" | "config">) => {
+export const provesInternet = (check: Pick<Check, "kind" | "config">, vendors: Vendors = new Map()) => {
   if (check.kind === "heartbeat") return false;
-  if (check.kind !== "http") return true;
-  const host = httpHost(check);
-  return host !== null && hostClass(host) === "internet";
+  const host = targetHost(check, vendors);
+  return host === null || (host !== undefined && hostClass(host) === "internet");
 };
 
 const isProbeUrl = (url: unknown) => {
@@ -110,7 +125,9 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
       lastPassAt = now();
       offlineSince = null;
     },
-    /** Whether a failure from a check that needs the internet should be held now. */
+    /** Whether Watch counts itself offline, without probing. */
+    offline: () => since() !== null,
+    /** Probes, or reuses a recent probe, and says whether Watch is offline now. */
     hold: async () => !(await probeNow()) && since() !== null,
   };
 };

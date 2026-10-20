@@ -69,9 +69,9 @@ describe("mcp", () => {
       "Watch cannot reach the internet since 2026-10-15 10:00 UTC. Failures of checks that need it are held for up to an hour each, and nothing alerts meanwhile.",
     );
     expect(watch.store.check("site")!.lastOutcome).toBeNull();
-    // After an hour of held runs the check's failure is recorded, while Watch still says it is offline.
-    for (let i = 0; i < 4; i++) {
-      fake.advance(20 * 60);
+    // After an hour of the check's runs held, its failure is recorded, while Watch still says it is offline.
+    for (let i = 0; i < 60; i++) {
+      fake.advance(61);
       await watch.runner.tick();
     }
     const later = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);

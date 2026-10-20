@@ -364,15 +364,20 @@ export const openStore = (file: string) => {
       addRun(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs);
       exec("UPDATE checks SET next_run_at = ? WHERE id = ?", nextRunAt, check.id);
     },
-    /** When a check's current streak of held runs began, or null when its latest run was not held. */
-    heldSince: (checkId: string): string | null => {
-      let since: string | null = null;
-      for (const run of all("SELECT at, evidence FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 200", checkId)) {
-        if (parse<{ held?: unknown }>(run.evidence, {}).held !== true) break;
-        since = String(run.at);
-      }
-      return since;
-    },
+    /**
+     * How many held runs a check has had since its last run recorded while Watch was online. A run
+     * recorded past the hold cap, marked heldTooLong, does not end the streak.
+     */
+    heldStreak: (checkId: string) =>
+      Number(
+        one(
+          `SELECT COUNT(*) AS n FROM runs WHERE check_id = ? AND json_extract(evidence, '$.held') = 1
+             AND id > COALESCE((SELECT MAX(id) FROM runs WHERE check_id = ?
+               AND json_extract(evidence, '$.held') IS NOT 1 AND json_extract(evidence, '$.heldTooLong') IS NOT 1), 0)`,
+          checkId,
+          checkId,
+        )?.n ?? 0,
+      ),
     /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
     setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>
       exec(
