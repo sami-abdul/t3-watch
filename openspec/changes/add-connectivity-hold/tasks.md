@@ -108,7 +108,7 @@
       `src/server/runner.test.ts`: Home and the text
       status say the probe addresses do not answer while such checks pass, and point at
       `probeUrls`.
-- [ ] 7.3 `README.md`: the probe-list notice.
+- [x] 7.3 `README.md`: the probe-list notice.
 - [ ] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance with a probe address that refuses and a check that reaches the
       internet, a failing check is recorded once the list is flagged, and Home shows the notice.
