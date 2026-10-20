@@ -52,7 +52,7 @@ export const extendServer = (options: {
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
     const config = options.config();
-    if (!hasPageSession(request, watch.store) || !fromPage(request, config.publicUrl))
+    if (!hasPageSession(request, watch.store, watch.deps.now()) || !fromPage(request, config.publicUrl))
       throw new WatchError("Make the signing secret on the Watch page", 403);
     sendJson(response, 200, { secret: makeAlertSecret(watch) });
     return true;

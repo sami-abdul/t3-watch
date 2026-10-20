@@ -8,6 +8,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Store } from "./store.ts";
 
 export const SIGN_IN_MINUTES = 10;
+/** How long a browser stays signed in. Signing in again takes a fresh link. */
+export const SESSION_DAYS = 90;
+
+const sessionCutoff = (now: Date) => new Date(now.getTime() - SESSION_DAYS * 86_400_000).toISOString();
 
 const hash = (code: string) => createHash("sha256").update(code).digest("hex");
 
@@ -33,8 +37,9 @@ export const signInLink = (pageUrl: string, code: string) => `${pageUrl}/signin?
  */
 export const startSession = (store: Store, now: Date) => {
   const id = randomBytes(32).toString("base64url");
-  store.addSession(hash(id), now.toISOString());
+  store.addSession(hash(id), now.toISOString(), sessionCutoff(now));
   return id;
 };
 
-export const isSession = (store: Store, id: string) => /^[A-Za-z0-9_-]{43}$/.test(id) && store.hasSession(hash(id));
+export const isSession = (store: Store, id: string, now: Date) =>
+  /^[A-Za-z0-9_-]{43}$/.test(id) && store.hasSession(hash(id), sessionCutoff(now));

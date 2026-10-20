@@ -36,7 +36,7 @@
 - [x] 4.5 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` warns when no Watch answers for
       that folder; its test ignores port and host overrides.
 
-- [ ] 4.6 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
+- [x] 4.6 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
       `src/server/http.ts`, `src/server/http.test.ts`: sessions end after 90 days; the cookie is read
       without decoding.
 - [ ] 4.7 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/store.ts`: a spent or expired

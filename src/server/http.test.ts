@@ -51,6 +51,9 @@ describe("http", () => {
     // The browser gets its own session, never the access token, and the token is no cookie.
     expect(cookie).not.toContain("test-token-123");
     expect((await fetch(`${base}/api/state`, { headers: { cookie: "t3w=test-token-123" } })).status).toBe(401);
+    // A malformed cookie is a plain refusal, not a server error.
+    expect((await fetch(`${base}/api/state`, { headers: { cookie: "t3w=%E0%A4%A" } })).status).toBe(401);
+    expect((await fetch(`${base}/`, { headers: { cookie: "t3w=%E0%A4%A" } })).status).toBe(401);
     // Signing out ends the session.
     watch.store.clearSessions();
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(401);

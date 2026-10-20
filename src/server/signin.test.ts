@@ -49,10 +49,20 @@ describe("sign-in codes", () => {
     const second = startSession(store, at("2026-10-20T10:00:00Z"));
     expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(first).not.toBe(second);
-    expect(isSession(store, first)).toBe(true);
-    expect(isSession(store, "x".repeat(43))).toBe(false);
+    expect(isSession(store, first, at("2026-10-21T10:00:00Z"))).toBe(true);
+    expect(isSession(store, "x".repeat(43), at("2026-10-21T10:00:00Z"))).toBe(false);
     expect(store.clearSessions()).toBe(2);
-    expect(isSession(store, first)).toBe(false);
+    expect(isSession(store, first, at("2026-10-21T10:00:00Z"))).toBe(false);
+    store.close();
+  });
+
+  it("ends a session 90 days after sign-in and clears old ones on the next sign-in", () => {
+    const store = openStore(":memory:");
+    const old = startSession(store, at("2026-07-01T10:00:00Z"));
+    expect(isSession(store, old, at("2026-09-28T10:00:00Z"))).toBe(true);
+    expect(isSession(store, old, at("2026-09-30T10:00:00Z"))).toBe(false);
+    startSession(store, at("2026-10-20T10:00:00Z"));
+    expect(store.clearSessions()).toBe(1);
     store.close();
   });
 

@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { isSession, isSignInCodeShape, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
+import { isSession, isSignInCodeShape, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
 import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
 
@@ -31,19 +31,20 @@ const sameToken = (given: string, expected: string) => {
 };
 
 /** The page's signed-in session: the cookie the sign-in link sets. */
-export const hasPageSession = (request: IncomingMessage, store: Store) => {
+export const hasPageSession = (request: IncomingMessage, store: Store, now: Date) => {
   const cookie = (request.headers.cookie ?? "")
     .split(";")
     .map((part) => part.trim().split("="))
     .find(([name]) => name === COOKIE);
-  return cookie?.[1] !== undefined && isSession(store, decodeURIComponent(cookie[1]));
+  // Session ids are URL-safe base64, so the value is compared as sent; nothing to decode.
+  return cookie?.[1] !== undefined && isSession(store, cookie[1], now);
 };
 
 /** The access token agents and the CLI send, or a signed-in browser's session. */
-export const isAuthorized = (request: IncomingMessage, token: string, store: Store) => {
+export const isAuthorized = (request: IncomingMessage, token: string, store: Store, now: Date) => {
   const header = request.headers.authorization ?? "";
   if (header.startsWith("Bearer ") && sameToken(header.slice(7), token)) return true;
-  return hasPageSession(request, store);
+  return hasPageSession(request, store, now);
 };
 
 /** A request the page made from its own origin, not another site or a script without an Origin. */
@@ -171,7 +172,7 @@ export const makeHttpServer = (options: {
     const session = startSession(watch.store, watch.deps.now());
     const secure = (options.config().publicUrl ?? "").startsWith("https:") ? "; Secure" : "";
     response.writeHead(302, {
-      "set-cookie": `${COOKIE}=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`,
+      "set-cookie": `${COOKIE}=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}${secure}`,
       location: "/",
     });
     response.end();
@@ -259,7 +260,7 @@ export const makeHttpServer = (options: {
       for (const route of [heartbeat, signin, ...(options.publicRoutes ?? [])])
         if (await route(request, response, url)) return;
       const guarded = url.pathname.startsWith("/api/") || url.pathname === "/mcp";
-      if (guarded && !isAuthorized(request, options.config().token, watch.store)) {
+      if (guarded && !isAuthorized(request, options.config().token, watch.store, watch.deps.now())) {
         sendJson(response, 401, { error: "Sign in with a one-time link from t3-watch url" });
         return;
       }
@@ -270,7 +271,7 @@ export const makeHttpServer = (options: {
         return;
       }
       // The page's HTML only reaches people who signed in; the sign-in link sets the cookie.
-      if (!isAuthorized(request, options.config().token, watch.store)) {
+      if (!isAuthorized(request, options.config().token, watch.store, watch.deps.now())) {
         response.writeHead(401, { "content-type": "text/plain" });
         response.end("Sign in with a one-time link: run t3-watch url, or ask your Watch thread for the page.");
         return;

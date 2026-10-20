@@ -462,10 +462,14 @@ export const openStore = (file: string) => {
     takeSignInCode: (hash: string, now: string) =>
       Number(exec("DELETE FROM signin_codes WHERE hash = ? AND expires_at > ?", hash, now).changes) === 1,
 
-    /** Keeps the hash of a browser session. */
-    addSession: (hash: string, at: string) =>
-      exec("INSERT INTO sessions (hash, created_at) VALUES (?, ?)", hash, at),
-    hasSession: (hash: string) => one("SELECT 1 AS found FROM sessions WHERE hash = ?", hash) !== undefined,
+    /** Keeps the hash of a browser session, clearing sessions that began before the cutoff. */
+    addSession: (hash: string, at: string, cutoff: string) => {
+      exec("DELETE FROM sessions WHERE created_at <= ?", cutoff);
+      exec("INSERT INTO sessions (hash, created_at) VALUES (?, ?)", hash, at);
+    },
+    /** Whether a session exists and began after the cutoff. */
+    hasSession: (hash: string, cutoff: string) =>
+      one("SELECT 1 AS found FROM sessions WHERE hash = ? AND created_at > ?", hash, cutoff) !== undefined,
     /** Ends every browser session and says how many there were. */
     clearSessions: () => Number(exec("DELETE FROM sessions").changes),
 

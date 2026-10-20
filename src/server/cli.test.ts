@@ -44,7 +44,7 @@ describe("t3-watch signout", () => {
       const said = execFileSync(process.execPath, [cli, "signout"], { env: { ...process.env, T3_WATCH_HOME: home }, encoding: "utf8" });
       expect(said).toContain("Signed out 2 browsers");
       const after = openStore(join(home, "watch.sqlite"));
-      expect(sessions.some((id) => isSession(after, id))).toBe(false);
+      expect(sessions.some((id) => isSession(after, id, new Date()))).toBe(false);
       after.close();
     } finally {
       rmSync(home, { recursive: true, force: true });
