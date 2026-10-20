@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
-import { makeSignInCode, signInLink, useSignInCode } from "./signin.ts";
+import { isSession, makeSignInCode, signInLink, startSession, useSignInCode } from "./signin.ts";
 import { openStore } from "./store.ts";
 
 const at = (iso: string) => new Date(iso);
@@ -39,6 +39,19 @@ describe("sign-in codes", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("gives each browser a session that signout ends", () => {
+    const store = openStore(":memory:");
+    const first = startSession(store, at("2026-10-20T10:00:00Z"));
+    const second = startSession(store, at("2026-10-20T10:00:00Z"));
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(first).not.toBe(second);
+    expect(isSession(store, first)).toBe(true);
+    expect(isSession(store, "x".repeat(43))).toBe(false);
+    expect(store.clearSessions()).toBe(2);
+    expect(isSession(store, first)).toBe(false);
+    store.close();
   });
 
   it("puts the code on the page's sign-in path", () => {

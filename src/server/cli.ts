@@ -235,6 +235,7 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch install     Run it in the background at login and register it with Codex and Claude Code
   t3-watch uninstall   Undo install, keeping your data
   t3-watch url         Print a one-time sign-in link for the page
+  t3-watch signout     Sign every browser out of the page; agents keep working
   t3-watch status      Say whether it is running and what is failing
   t3-watch mcp         MCP over stdio, for agents (install registers this)
 `;
@@ -245,7 +246,15 @@ export const main = async (args: ReadonlyArray<string>) => {
     if (command === "start") await start();
     else if (command === "install") await install();
     else if (command === "uninstall") await uninstall();
-    else if (command === "url") {
+    else if (command === "signout") {
+      const store = openStore(join(watchHome(), "watch.sqlite"));
+      try {
+        const ended = store.clearSessions();
+        console.log(`Signed out ${ended} browser${ended === 1 ? "" : "s"}. Agents keep working. Sign in again with t3-watch url.`);
+      } finally {
+        store.close();
+      }
+    } else if (command === "url") {
       // The link alone on stdout, so scripts can take it; the note goes to stderr.
       console.log(freshSignInLink(watchHome()));
       console.error(`It works once, within ${SIGN_IN_MINUTES} minutes.`);

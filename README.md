@@ -23,7 +23,8 @@ node bin/t3-watch.js install
 server to Codex and Claude Code, and prints a sign-in link for the page. A sign-in link works
 once, within 10 minutes, so a copy left in a terminal, a log or a chat is useless after use. For
 each other browser, `node bin/t3-watch.js url` prints a new one, or ask your Watch thread for the
-page.
+page. A browser gets its own session, never the access token agents use, and `t3-watch signout`
+signs every browser out while agents keep working.
 
 On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
 page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8461 http://127.0.0.1:8460`)

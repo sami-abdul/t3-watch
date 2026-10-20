@@ -9,6 +9,7 @@ import type { WatchConfig } from "./config.ts";
 import { decideDraft, draftCheck, draftVendor } from "./drafts.ts";
 import { extendServer } from "./extend.ts";
 import { makeHttpServer } from "./http.ts";
+import { startSession } from "./signin.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
 
 const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "chat-token-123", roots: [], publicUrl: "https://watch.example" };
@@ -180,7 +181,7 @@ describe("alerts", () => {
     const watch = testWatch(fakeDeps({}).deps);
     const { url } = await connect(watch);
     const auth = { authorization: `Bearer ${config.token}` };
-    const page = { cookie: `t3w=${config.token}`, origin: url.origin };
+    const page = { cookie: `t3w=${startSession(watch.store, new Date())}`, origin: url.origin };
     const make = (headers: Record<string, string>) => fetch(new URL("/api/alerts/secret", url), { method: "POST", headers });
     expect((await make({})).status).toBe(401);
     // The API token agents hold is not enough, nor is the cookie from another origin.

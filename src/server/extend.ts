@@ -44,14 +44,15 @@ export const extendServer = (options: {
     return true;
   };
 
-  // The reply is the secret itself, so it goes to the signed-in page and not to the API token
-  // agents use, and MCP has no way to it. That keeps it out of chats an agent writes by habit; it
-  // does not stop an agent that forges the page's cookie, since anything running as this user can
-  // read Watch's files anyway.
+  // The reply is the secret itself, so it goes to a signed-in browser and not to the API token
+  // agents use. That keeps it out of chats an agent writes by habit. It does not stop an agent
+  // that deliberately signs a browser session in for itself, through a link from
+  // watch_sign_in_link that the instructions say is for the person, or that reads Watch's files,
+  // which anything running as this user can.
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
     const config = options.config();
-    if (!hasPageSession(request, config.token) || !fromPage(request, config.publicUrl))
+    if (!hasPageSession(request, watch.store) || !fromPage(request, config.publicUrl))
       throw new WatchError("Make the signing secret on the Watch page", 403);
     sendJson(response, 200, { secret: makeAlertSecret(watch) });
     return true;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { shellQuote, systemdQuote } from "./cli.ts";
-import { useSignInCode } from "./signin.ts";
+import { isSession, startSession, useSignInCode } from "./signin.ts";
 import { openStore } from "./store.ts";
 
 describe("t3-watch url", () => {
@@ -23,6 +23,25 @@ describe("t3-watch url", () => {
       expect(useSignInCode(store, code, new Date())).toBe(true);
       expect(useSignInCode(store, code, new Date())).toBe(false);
       store.close();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("t3-watch signout", () => {
+  it("ends every browser session", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-signout-"));
+    try {
+      const store = openStore(join(home, "watch.sqlite"));
+      const sessions = [startSession(store, new Date()), startSession(store, new Date())];
+      store.close();
+      const cli = join(import.meta.dirname, "cli.ts");
+      const said = execFileSync(process.execPath, [cli, "signout"], { env: { ...process.env, T3_WATCH_HOME: home }, encoding: "utf8" });
+      expect(said).toContain("Signed out 2 browsers");
+      const after = openStore(join(home, "watch.sqlite"));
+      expect(sessions.some((id) => isSession(after, id))).toBe(false);
+      after.close();
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

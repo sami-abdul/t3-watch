@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 CREATE INDEX IF NOT EXISTS heartbeats_by_check ON heartbeats(check_id, at);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS signin_codes (hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, created_at TEXT NOT NULL);
 `;
 
 type Row = Record<string, unknown>;
@@ -459,6 +460,13 @@ export const openStore = (file: string) => {
       exec("DELETE FROM signin_codes WHERE expires_at <= ?", now);
       return Number(exec("DELETE FROM signin_codes WHERE hash = ?", hash).changes) === 1;
     },
+
+    /** Keeps the hash of a browser session. */
+    addSession: (hash: string, at: string) =>
+      exec("INSERT INTO sessions (hash, created_at) VALUES (?, ?)", hash, at),
+    hasSession: (hash: string) => one("SELECT 1 AS found FROM sessions WHERE hash = ?", hash) !== undefined,
+    /** Ends every browser session and says how many there were. */
+    clearSessions: () => Number(exec("DELETE FROM sessions").changes),
 
     getKv: <T>(key: string, fallback: T): T =>
       parse(one("SELECT value FROM kv WHERE key = ?", key)?.value, fallback),

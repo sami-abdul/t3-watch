@@ -48,6 +48,12 @@ describe("http", () => {
     expect(response.status).toBe(302);
     const cookie = response.headers.get("set-cookie")!.split(";")[0]!;
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(200);
+    // The browser gets its own session, never the access token, and the token is no cookie.
+    expect(cookie).not.toContain("test-token-123");
+    expect((await fetch(`${base}/api/state`, { headers: { cookie: "t3w=test-token-123" } })).status).toBe(401);
+    // Signing out ends the session.
+    watch.store.clearSessions();
+    expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(401);
     // The same code again, a malformed one, and a link carrying the access token are refused.
     expect((await press(code)).status).toBe(401);
     expect((await fetch(`${base}/signin?code=<script>`)).status).toBe(401);

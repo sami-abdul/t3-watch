@@ -25,7 +25,7 @@
 - [x] 4.1 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/signin.ts`,
       `src/server/chat.test.ts`: opening a link shows a Sign in button that posts the code, so a
       link preview cannot spend it.
-- [ ] 4.2 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
+- [x] 4.2 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
       `src/server/http.ts`, `src/server/extend.ts`, `src/server/cli.ts`, `src/server/cli.test.ts`,
       `src/server/chat.test.ts`, `README.md`: a browser gets its own session, never the access
       token; `t3-watch signout` ends every browser session.

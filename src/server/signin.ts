@@ -25,3 +25,16 @@ export const useSignInCode = (store: Store, code: string, now: Date) =>
   isSignInCodeShape(code) && store.takeSignInCode(hash(code), now.toISOString());
 
 export const signInLink = (pageUrl: string, code: string) => `${pageUrl}/signin?code=${code}`;
+
+/**
+ * A browser's session after sign-in: random, stored as a hash and separate from the access
+ * token, so a sign-in never hands the browser the token agents use, and signout ends sessions
+ * without touching it.
+ */
+export const startSession = (store: Store, now: Date) => {
+  const id = randomBytes(32).toString("base64url");
+  store.addSession(hash(id), now.toISOString());
+  return id;
+};
+
+export const isSession = (store: Store, id: string) => /^[A-Za-z0-9_-]{43}$/.test(id) && store.hasSession(hash(id));
