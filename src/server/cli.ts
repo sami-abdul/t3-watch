@@ -190,7 +190,8 @@ WantedBy=default.target
   } else throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
   for (const line of await registerMcp()) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
-  // Agents run install, and some agent shells are terminals, so install never prints the token.
+  // The link is one-time and short-lived, and never carries the access token, so it is safe to
+  // print even when an agent runs install.
   console.log(`Open this link within ${SIGN_IN_MINUTES} minutes to sign in. It works once: ${freshSignInLink(home)}`);
   console.log(`For another browser, run: ${shellQuote(node!)} ${shellQuote(bin!)} url`);
   if (platform() === "linux")

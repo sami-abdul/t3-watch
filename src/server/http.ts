@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { isSession, isSignInCodeShape, startSession, useSignInCode } from "./signin.ts";
+import { isSession, isSignInCodeShape, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
 import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
 
@@ -87,7 +87,7 @@ p { color: #737373; }
 button { font: inherit; padding: .5rem 1.1rem; border: 0; border-radius: .6rem; background: #171717; color: #fafafa; cursor: pointer; }
 @media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #fafafa; } button { background: #fafafa; color: #0a0a0a; } }
 </style></head>
-<body><h1>Sign in to Watch</h1><p>This link works once, within 10 minutes.</p>
+<body><h1>Sign in to Watch</h1><p>This link works once, within ${SIGN_IN_MINUTES} minutes.</p>
 <form method="post" action="/signin"><input type="hidden" name="code" value="${code}"><button type="submit">Sign in</button></form>
 </body></html>
 `;
@@ -148,7 +148,9 @@ export const makeHttpServer = (options: {
     if (url.pathname !== "/signin") return false;
     const refuse = () => {
       response.writeHead(401, { "content-type": "text/plain", "cache-control": "no-store" });
-      response.end("This sign-in link is not valid, was already used or is older than 10 minutes. Run t3-watch url for a new one.");
+      response.end(
+        `This sign-in link is not valid, was already used or is older than ${SIGN_IN_MINUTES} minutes. Run t3-watch url for a new one, or ask your Watch thread.`,
+      );
       return true;
     };
     if (request.method === "GET" || request.method === "HEAD") {
@@ -258,7 +260,7 @@ export const makeHttpServer = (options: {
         if (await route(request, response, url)) return;
       const guarded = url.pathname.startsWith("/api/") || url.pathname === "/mcp";
       if (guarded && !isAuthorized(request, options.config().token, watch.store)) {
-        sendJson(response, 401, { error: "Sign in with the link from t3-watch url" });
+        sendJson(response, 401, { error: "Sign in with a one-time link from t3-watch url" });
         return;
       }
       for (const route of [api, ...(options.extraRoutes ?? [])])
@@ -270,7 +272,7 @@ export const makeHttpServer = (options: {
       // The page's HTML only reaches people who signed in; the sign-in link sets the cookie.
       if (!isAuthorized(request, options.config().token, watch.store)) {
         response.writeHead(401, { "content-type": "text/plain" });
-        response.end("Sign in with the link from: t3-watch url");
+        response.end("Sign in with a one-time link: run t3-watch url, or ask your Watch thread for the page.");
         return;
       }
       if (await staticFiles(request, response, url)) return;
