@@ -148,7 +148,8 @@ WantedBy=default.target
   } else throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
   for (const line of await registerMcp()) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
-  console.log(signInLine(config, process.stdout.isTTY === true));
+  // Agents run install, and some agent shells are terminals, so install never prints the token.
+  console.log(`To sign in, run this in your own terminal and open the link once in each browser: node ${bin} url`);
   if (platform() === "linux")
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
 };
