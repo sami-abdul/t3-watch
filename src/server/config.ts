@@ -57,3 +57,13 @@ export const localUrl = (config: WatchConfig) => {
 
 export const pageUrl = (config: WatchConfig) => config.publicUrl ?? localUrl(config);
 
+/**
+ * The addresses the service listens on: its host, plus 127.0.0.1 when the host is one address
+ * that is not loopback, so a local proxy such as tailscale serve can reach the page too.
+ */
+export const listenHosts = (config: WatchConfig) => {
+  const host = bareHost(config.host);
+  const loopbackOrAll = ["0.0.0.0", "::", "::1", "localhost"].includes(host) || host.startsWith("127.");
+  return loopbackOrAll ? [host] : [host, "127.0.0.1"];
+};
+

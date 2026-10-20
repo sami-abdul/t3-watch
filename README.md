@@ -26,8 +26,9 @@ each other browser, `node bin/t3-watch.js url` prints a new one, or ask your Wat
 page.
 
 On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
-page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8460 http://127.0.0.1:8460`)
-and set `publicUrl` in `~/.t3-watch/config.json` to that address.
+page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8461 http://127.0.0.1:8460`)
+and set `publicUrl` in `~/.t3-watch/config.json` to that address. If `host` there is a tailnet
+address, Watch listens on 127.0.0.1 as well, so `tailscale serve` can front it on another port.
 
 ## First run
 

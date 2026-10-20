@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeWatch } from "./app.ts";
-import { loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
+import { listenHosts, loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
@@ -41,24 +41,40 @@ const start = async () => {
     home,
     root: packageRoot(),
   });
-  const server = makeHttpServer({
-    watch,
-    config: () => config,
-    webDir: join(packageRoot(), "dist", "web"),
-    extraRoutes: extension.routes,
-    publicRoutes: extension.publicRoutes,
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(config.port, config.host, resolve);
-  });
+  const makeServer = () =>
+    makeHttpServer({
+      watch,
+      config: () => config,
+      webDir: join(packageRoot(), "dist", "web"),
+      extraRoutes: extension.routes,
+      publicRoutes: extension.publicRoutes,
+    });
+  const listen = (server: ReturnType<typeof makeServer>, host: string) =>
+    new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(config.port, host, resolve);
+    });
+  const [primary, ...extra] = listenHosts(config);
+  const servers = [makeServer()];
+  await listen(servers[0]!, primary!);
+  // Loopback lets a local proxy such as tailscale serve reach the page. Missing it is not fatal.
+  for (const host of extra) {
+    const server = makeServer();
+    try {
+      await listen(server, host);
+      servers.push(server);
+      console.log(`Also listening on http://${host}:${config.port}`);
+    } catch (error) {
+      console.error(`Could not also listen on ${host}:${config.port}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   watch.runner.start();
   extension.start();
   console.log(`t3-watch is running at ${pageUrl(config)}`);
   console.log("Sign in with a one-time link from: t3-watch url");
   const stop = () => {
     extension.stop();
-    server.close();
+    for (const server of servers) server.close();
     watch.close();
     process.exit(0);
   };

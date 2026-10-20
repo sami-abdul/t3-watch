@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { loadConfig, localUrl, pageUrl, type WatchConfig } from "./config.ts";
+import { listenHosts, loadConfig, localUrl, pageUrl, type WatchConfig } from "./config.ts";
 
 const config = (host: string, publicUrl: string | null = null): WatchConfig => ({
   port: 8460,
@@ -31,6 +31,14 @@ describe("config", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it("also listens on loopback when bound to one other address", () => {
+    expect(listenHosts(config("100.64.0.7"))).toEqual(["100.64.0.7", "127.0.0.1"]);
+    expect(listenHosts(config("127.0.0.1"))).toEqual(["127.0.0.1"]);
+    expect(listenHosts(config("0.0.0.0"))).toEqual(["0.0.0.0"]);
+    expect(listenHosts(config("::1"))).toEqual(["::1"]);
+    expect(listenHosts(config("localhost"))).toEqual(["localhost"]);
   });
 
   it("links to the public address when there is one", () => {

@@ -12,8 +12,8 @@
 
 ## 2. Loopback listener
 
-- [ ] 2.1 `src/server/cli.ts`, `src/server/config.ts`, `src/server/config.test.ts`: also listen
-      on 127.0.0.1 when `host` names one non-loopback address.
+- [x] 2.1 `src/server/cli.ts`, `src/server/config.ts`, `src/server/config.test.ts`, `README.md`:
+      also listen on 127.0.0.1 when `host` names one non-loopback address.
 
 ## 3. npm package
 
