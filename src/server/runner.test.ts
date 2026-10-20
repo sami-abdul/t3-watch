@@ -418,6 +418,42 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
   });
 
+  it("stops holding once the probe list disagrees with passing checks twice", async () => {
+    const probes = new Set(["https://www.gstatic.com/generate_204", "https://one.one.one.one/cdn-cgi/trace"]);
+    let siteUp = true;
+    const fake = fakeDeps({
+      fetch: (url) => {
+        if (probes.has(url.href)) throw new TypeError("blocked");
+        if (url.href === SITE && !siteUp) return new Response("down", { status: 503 });
+        return new Response("ok");
+      },
+    });
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps });
+    const define = (id: string, url: string, cadenceSeconds: number) =>
+      watch.defineCheck({ id, serviceId: "s", kind: "http", intent: id, config: { url }, keyId: null, cadenceSeconds, origin: "user" }, "on");
+    define("site", SITE, 60);
+    define("other", "https://other.example/", 3600);
+    await watch.runner.tick();
+    siteUp = false;
+    // Twice: the site's failure finds the probes silent, then another public site answers anyway.
+    for (let i = 0; i < 2; i++) {
+      fake.advance(61);
+      await watch.runner.tick();
+      expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+      await watch.setCheck("other", "run");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true });
+    expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in config\.json\.$/);
+    // No longer held: the next two failing runs fail the site and alert.
+    fake.advance(61);
+    await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("fail");
+    expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
+  });
+
   it("does not probe for a failure that changes nothing", async () => {
     const { watch, net, advance } = setup();
     net.site = false;

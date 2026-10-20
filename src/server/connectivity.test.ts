@@ -59,6 +59,50 @@ describe("connectivity", () => {
     expect(link.link().offlineSince).toBeNull();
   });
 
+  it("doubts a probe list that disagrees with passing checks twice, and stops holding until a probe answers", async () => {
+    const { link, net, advance } = setup();
+    net.up = false;
+    expect(await link.hold()).toBe(true);
+    // A check reached the internet anyway, and the fresh probe still gets no answer.
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(false);
+    advance(16);
+    expect(await link.hold()).toBe(true);
+    await link.sawInternet();
+    expect(link.link()).toEqual({ offlineSince: null, probesDisagree: true });
+    advance(16);
+    expect(await link.hold()).toBe(false);
+    expect(link.offline()).toBe(false);
+    // A probe that answers clears the doubt.
+    net.up = true;
+    advance(16);
+    await link.hold();
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
+  it("counts no disagreement when an outage simply ends", async () => {
+    const { link, net, advance } = setup();
+    for (let i = 0; i < 2; i++) {
+      net.up = false;
+      advance(16);
+      expect(await link.hold()).toBe(true);
+      net.up = true;
+      await link.sawInternet();
+    }
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
+  it("lets disagreements more than an hour apart pass without doubt", async () => {
+    const { link, net, advance } = setup();
+    net.up = false;
+    await link.hold();
+    await link.sawInternet();
+    advance(61 * 60);
+    await link.hold();
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
   it("probes the configured addresses, and an empty list never holds", async () => {
     const custom = setup(["https://probe.example/ok"]);
     await custom.link.hold();

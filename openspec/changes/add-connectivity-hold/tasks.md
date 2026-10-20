@@ -101,10 +101,11 @@
 
 ## 7. A probe list that disagrees
 
-- [ ] 7.1 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: a check that reaches the
+- [x] 7.1 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: a check that reaches the
       internet while Watch counts itself offline sets off a fresh probe; two that fail within an
       hour flag the probe list, which stops holding, and any probe that answers clears it.
-- [ ] 7.2 `src/server/state.ts`, `src/web/Home.tsx`, `src/server/runner.test.ts`: Home and the text
+- [x] 7.2 `src/server/state.ts`, `src/web/Home.tsx`, `src/web/logic.test.ts`, `src/server/runner.ts`,
+      `src/server/runner.test.ts`: Home and the text
       status say the probe addresses do not answer while such checks pass, and point at
       `probeUrls`.
 - [ ] 7.3 `README.md`: the probe-list notice.

@@ -21,10 +21,14 @@ const OFFLINE_LAPSE_MS = 30 * 60_000;
  * list cannot hide them for good. Counted in runs, so time Watch spends stopped does not count.
  */
 export const MAX_HOLD_MS = 60 * 60_000;
+/** Two disagreements within this long mean the probe list is wrong for this network. */
+const DISAGREE_SPAN_MS = 60 * 60_000;
 
 export interface Link {
   /** When Watch found it could not reach the internet, or null while it can. */
   readonly offlineSince: string | null;
+  /** Whether the probe addresses keep failing while checks that need the internet pass. */
+  readonly probesDisagree: boolean;
 }
 
 type Vendors = ReadonlyMap<string, { readonly api?: { readonly origin: string } }>;
@@ -78,9 +82,15 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   let lastFailedProbeAt = Number.NEGATIVE_INFINITY;
   let lastPassAt = Number.NEGATIVE_INFINITY;
   let probe: { readonly at: number; readonly answer: Promise<boolean> } | null = null;
+  // When fresh probes failed right after a check reached the internet, in the last hour.
+  let disagreements: ReadonlyArray<number> = [];
+  let verifying: Promise<void> | null = null;
 
   /** When the current offline spell began, while a failed probe in the last 30 minutes vouches for it. */
   const since = () => (offlineSince !== null && now() - lastFailedProbeAt <= OFFLINE_LAPSE_MS ? offlineSince : null);
+
+  /** Whether the probe list has disagreed with passing checks twice in the last hour. */
+  const doubted = () => disagreements.filter((at) => now() - at <= DISAGREE_SPAN_MS).length >= 2;
 
   /** True when any address answers at all; an empty list never counts as offline. */
   const reach = async (urls: ReadonlyArray<string>) => {
@@ -102,6 +112,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     const startedAt = now();
     if (probe !== null && startedAt - probe.at <= PROBE_REUSE_MS) return probe.answer;
     const answer = reach(probeUrls(setting())).then((online) => {
+      if (online) disagreements = [];
       // A check that passed while the probe ran is newer evidence than the probe.
       if (online || lastPassAt >= startedAt) {
         offlineSince = null;
@@ -115,20 +126,45 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     return answer;
   };
 
+  /**
+   * Watch counted itself offline, yet a check just reached the internet. A fresh probe that still
+   * gets no answer disagrees with that check: this network may block the probe addresses.
+   */
+  const verify = () =>
+    (verifying ??= reach(probeUrls(setting()))
+      .then((online) => {
+        const at = now();
+        disagreements = online ? [] : [...disagreements.filter((t) => at - t <= DISAGREE_SPAN_MS), at];
+      })
+      .finally(() => {
+        verifying = null;
+      }));
+
+  /** When the current offline spell began, unless the probe list is in doubt. */
+  const offlineFrom = () => (doubted() ? null : since());
+
   return {
     link: (): Link => {
-      const from = since();
-      return { offlineSince: from === null ? null : new Date(from).toISOString() };
+      const from = offlineFrom();
+      return { offlineSince: from === null ? null : new Date(from).toISOString(), probesDisagree: doubted() };
     },
-    /** A check that needs the internet passed, which proves the link works. */
-    sawInternet: () => {
+    /**
+     * A check that needs the internet passed, which proves the link works. When Watch counted
+     * itself offline, it also probes again; the returned promise settles when that is done.
+     */
+    sawInternet: (): Promise<void> => {
+      const wasOffline = since() !== null;
       lastPassAt = now();
       offlineSince = null;
+      return wasOffline ? verify() : Promise.resolve();
     },
     /** Whether Watch counts itself offline, without probing. */
-    offline: () => since() !== null,
-    /** Probes, or reuses a recent probe, and says whether Watch is offline now. */
-    hold: async () => !(await probeNow()) && since() !== null,
+    offline: () => offlineFrom() !== null,
+    /**
+     * Probes, or reuses a recent probe, and says whether Watch is offline now. While the probe list
+     * is in doubt it still probes, so an answer can clear the doubt, but never holds.
+     */
+    hold: async () => !(await probeNow()) && offlineFrom() !== null,
   };
 };
 export type Connectivity = ReturnType<typeof makeConnectivity>;

@@ -85,6 +85,12 @@ export function Home({
           and nothing alerts meanwhile.
         </Muted>
       ) : null}
+      {state.link.probesDisagree ? (
+        <Muted className="text-foreground">
+          Watch's probe addresses do not answer while checks that need the internet pass, so it is not holding failures. If
+          this network blocks them, set probeUrls in ~/.t3-watch/config.json.
+        </Muted>
+      ) : null}
       {notice !== null ? <Muted className="text-foreground">{notice}</Muted> : null}
 
       {model.failing.length > 0 ? (
