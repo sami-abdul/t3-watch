@@ -32,7 +32,7 @@ describe("runner", () => {
     expect(events.map((e) => e.to)).toEqual(["fail", "pass"]);
   });
 
-  it("records an event for a first run only when it fails", async () => {
+  it("records an event for a new check only when its first two runs fail", async () => {
     const fake = fakeDeps({ fetch: () => new Response("", { status: 500 }) });
     const watch = testWatch(fake.deps);
     const events: Array<ChangeEvent> = [];
@@ -42,7 +42,83 @@ describe("runner", () => {
       "on",
     );
     await watch.runner.tick();
+    expect(events).toHaveLength(0);
+    fake.advance(61);
+    await watch.runner.tick();
     expect(events).toHaveLength(1);
+  });
+
+  it("keeps one bad run pending, and lets the next run clear it with no event", async () => {
+    let status = 200;
+    const fake = fakeDeps({ fetch: () => new Response("", { status }) });
+    const watch = testWatch(fake.deps);
+    const events: Array<ChangeEvent> = [];
+    watch.onEvent((event) => events.push(event));
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 300, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
+    status = 500;
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("c")!.lastOutcome).toBe("pass");
+    expect(watch.store.runs("c")[0]!.evidence).toMatchObject({ pending: true });
+    // The confirming run comes a minute later, not at the 5-minute cadence, and here it passes.
+    status = 200;
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(watch.store.runs("c")).toHaveLength(3);
+    expect(watch.store.check("c")!.lastOutcome).toBe("pass");
+    expect(events).toEqual([]);
+  });
+
+  it("fails a check on the second bad run in a row, a minute after the first", async () => {
+    let status = 200;
+    const fake = fakeDeps({ fetch: () => new Response("", { status }) });
+    const watch = testWatch(fake.deps);
+    const events: Array<ChangeEvent> = [];
+    watch.onEvent((event) => events.push(event));
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 300, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
+    status = 500;
+    fake.advance(301);
+    await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(watch.store.check("c")!.lastOutcome).toBe("fail");
+    expect(events.map((e) => [e.from, e.to])).toEqual([["pass", "fail"]]);
+    // Recovery counts at once.
+    status = 200;
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(events.map((e) => e.to)).toEqual(["fail", "pass"]);
+  });
+
+  it("does not count a pending run left from long ago", async () => {
+    let status = 200;
+    const fake = fakeDeps({ fetch: () => new Response("", { status }) });
+    const watch = testWatch(fake.deps);
+    const events: Array<ChangeEvent> = [];
+    watch.onEvent((event) => events.push(event));
+    watch.defineCheck(
+      { id: "c", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" },
+      "on",
+    );
+    await watch.runner.tick();
+    status = 500;
+    fake.advance(61);
+    await watch.runner.tick();
+    // Paused before the confirming run, and resumed ten minutes later.
+    await watch.setCheck("c", "pause");
+    fake.advance(600);
+    await watch.setCheck("c", "resume");
+    await watch.runner.tick();
+    expect(watch.store.check("c")!.lastOutcome).toBe("pass");
+    expect(events).toEqual([]);
   });
 
   it("skips paused and snoozed checks until the snooze ends", async () => {
@@ -104,10 +180,13 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch could not reach the internet: Could not connect/);
     expect(watch.link().offlineSince).not.toBeNull();
 
-    // The link is back but the site is down: that failure is real.
+    // The link is back but the site is down: that failure is real, once a second run confirms it.
     net.up = true;
     net.site = false;
     advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    advance(61);
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
     expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
@@ -123,7 +202,11 @@ describe("runner while Watch is offline", () => {
       await watch.runner.tick();
     }
     expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    // Past the cap the failure is recorded as pending, and the next run fails the check.
     advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    advance(61);
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
     expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
@@ -136,6 +219,8 @@ describe("runner while Watch is offline", () => {
       "on",
     );
     net.site = false;
+    await watch.runner.tick();
+    advance(61);
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastSummary).toMatch(/503/);
     // The link drops and the other site's failure shows Watch is offline before the site runs again.
@@ -166,6 +251,8 @@ describe("runner while Watch is offline", () => {
   it("does not probe for a failure that changes nothing", async () => {
     const { watch, net, advance } = setup();
     net.site = false;
+    await watch.runner.tick();
+    advance(61);
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
     const probes = net.probes;
@@ -200,6 +287,8 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.check("hb")!.lastOutcome).toBe("pass");
     net.up = false;
     advance(120);
+    await watch.runner.tick();
+    advance(61);
     await watch.runner.tick();
     expect(watch.store.check("hb")!.lastOutcome).toBe("fail");
     expect(watch.store.events().some((e) => e.checkId === "hb" && e.to === "fail")).toBe(true);

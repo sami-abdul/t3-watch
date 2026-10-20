@@ -217,6 +217,19 @@ export const openStore = (file: string) => {
       checkId,
     );
   };
+  /** Keeps a run in the history without touching the check's last result; only its next run time moves. */
+  const setAside = (
+    checkId: string,
+    at: string,
+    outcome: Outcome,
+    summary: string,
+    evidence: Record<string, unknown>,
+    durationMs: number,
+    nextRunAt: string,
+  ) => {
+    addRun(checkId, at, outcome, summary, evidence, durationMs);
+    exec("UPDATE checks SET next_run_at = ? WHERE id = ?", nextRunAt, checkId);
+  };
 
   return {
     close: () => db.close(),
@@ -361,8 +374,27 @@ export const openStore = (file: string) => {
       nextRunAt: string,
     ) => {
       const summary = `Held while Watch could not reach the internet: ${result.summary}`.slice(0, 300);
-      addRun(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs);
-      exec("UPDATE checks SET next_run_at = ? WHERE id = ?", nextRunAt, check.id);
+      setAside(check.id, at, "unknown", summary, { ...result.evidence, held: true }, durationMs, nextRunAt);
+    },
+    /**
+     * Keeps a non-passing run that waits for a second one before the check fails. The check keeps
+     * its last result and no event is made; only its next run time moves.
+     */
+    recordPending: (
+      check: Check,
+      result: { outcome: Outcome; summary: string; evidence: Record<string, unknown> },
+      at: string,
+      durationMs: number,
+      nextRunAt: string,
+    ) => setAside(check.id, at, result.outcome, result.summary, { ...result.evidence, pending: true }, durationMs, nextRunAt),
+    /** Whether a check's latest run that was not held is a pending failure from `since` or later. */
+    pendingFailure: (checkId: string, since: string) => {
+      const run = one(
+        `SELECT at, json_extract(evidence, '$.pending') AS pending FROM runs
+          WHERE check_id = ? AND json_extract(evidence, '$.held') IS NOT 1 ORDER BY id DESC LIMIT 1`,
+        checkId,
+      );
+      return run !== undefined && Number(run.pending) === 1 && String(run.at) >= since;
     },
     /**
      * How many held runs a check has had since its last run recorded while Watch was online. A run

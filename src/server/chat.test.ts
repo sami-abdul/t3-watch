@@ -70,7 +70,8 @@ describe("mcp", () => {
     );
     expect(watch.store.check("site")!.lastOutcome).toBeNull();
     // After an hour of the check's runs held, its failure is recorded, while Watch still says it is offline.
-    for (let i = 0; i < 60; i++) {
+    // 60 held runs, then one recorded and pending, then a second in a row that fails the check.
+    for (let i = 0; i < 61; i++) {
       fake.advance(61);
       await watch.runner.tick();
     }
@@ -105,8 +106,12 @@ describe("mcp", () => {
   });
 
   it("pauses a check from chat and reports status as text", async () => {
-    const watch = testWatch(fakeDeps({ fetch: () => new Response("", { status: 500 }) }).deps);
+    const fake = fakeDeps({ fetch: () => new Response("", { status: 500 }) });
+    const watch = testWatch(fake.deps);
     watch.defineCheck({ id: "site", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
+    // The second failing run in a row fails the check.
+    await watch.runner.tick();
+    fake.advance(61);
     await watch.runner.tick();
     const { client } = await connect(watch);
     const status = await client.callTool({ name: "watch_status", arguments: {} });
@@ -170,6 +175,8 @@ describe("alerts", () => {
     setAlerts(watch, { url: "https://t3.example/hook", secret: "a-signing-secret-1234" });
     watch.defineCheck({ id: "site", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
     await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
     expect(watch.store.pendingEvents()).toHaveLength(1);
     up = true;
@@ -194,6 +201,8 @@ describe("alerts", () => {
     setAlerts(watch, { url: "https://t3.example/hook" });
     watch.upsertService({ id: "github:example/api", vendor: "github", label: "example/api", target: "example/api", reachable: true, note: null, foundIn: [] });
     watch.defineCheck({ id: "ci", serviceId: "github:example/api", kind: "http", intent: "CI on main is passing", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
+    await watch.runner.tick();
+    fake.advance(61);
     await watch.runner.tick();
     up = true;
     fake.advance(61);

@@ -3,6 +3,10 @@ import { type Connectivity, heldWhenOffline, MAX_HOLD_MS, provesInternet } from 
 import { type ChangeEvent, type Check, changesState } from "./store.ts";
 
 const CONCURRENCY = 4;
+/** A failure after a pass is confirmed by a second run this soon, or at the check's cadence if shorter. */
+const CONFIRM_SECONDS = 60;
+/** A pending failure counts for a confirming run within twice the cadence, or at least this long. */
+const CONFIRM_WINDOW_SECONDS = 120;
 
 /** Runs due checks on a clock. Each check runs at most once at a time. */
 export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) => void, link: Connectivity) => {
@@ -35,6 +39,17 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         }
         // Past the cap the run is recorded, marked so the streak goes on while Watch stays offline.
         if (offline) recorded = { ...result, evidence: { ...result.evidence, heldTooLong: true } };
+      }
+      // One non-passing run from a check that was passing, or is new, is pending: kept in the
+      // history with no new state, and run again within a minute. Only a second in a row fails the
+      // check and alerts, so one dropped request on a lossy link does not.
+      if (recorded.outcome !== "pass" && (fresh.lastOutcome ?? "pass") === "pass") {
+        const window = Math.max(2 * fresh.cadenceSeconds, CONFIRM_WINDOW_SECONDS) * 1000;
+        if (!context.store.pendingFailure(fresh.id, new Date(finished.getTime() - window).toISOString())) {
+          const again = new Date(finished.getTime() + Math.min(fresh.cadenceSeconds, CONFIRM_SECONDS) * 1000).toISOString();
+          context.store.recordPending(fresh, recorded, finished.toISOString(), finished.getTime() - started.getTime(), again);
+          return result;
+        }
       }
       const event = context.store.recordRun(
         fresh,
