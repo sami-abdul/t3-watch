@@ -33,6 +33,24 @@ describe("check kinds", () => {
     expect(calls[0]!.args).toContain("--branch");
   });
 
+  it("github with maxAgeSeconds fails when the newest success is too old", async () => {
+    // The fake clock reads 2026-10-15T10:00:00Z.
+    let runs = [
+      { status: "completed", conclusion: "success", workflowName: "refresh", displayTitle: "r", url: "u1", createdAt: "2026-10-15T03:00:00Z" },
+      { status: "completed", conclusion: "success", workflowName: "refresh", displayTitle: "r", url: "u2", createdAt: "2026-10-14T23:00:00Z" },
+    ];
+    const { deps } = fakeDeps({ commands: { gh: () => ({ stdout: JSON.stringify(runs) }) } });
+    const watch = testWatch(deps);
+    const check = watch.defineCheck({ ...base, id: "g", serviceId: "s", kind: "github", intent: "x", config: { repo: "acme/site", workflow: "refresh.yml", maxAgeSeconds: 21600 } }, "on");
+    const stale = await watch.runner.trial(check);
+    expect([stale.outcome, stale.summary]).toEqual(["fail", "Last successful run 7 hours ago on acme/site, more than 6 hours"]);
+    runs = [{ ...runs[0]!, createdAt: "2026-10-15T05:00:00Z" }, ...runs];
+    const fresh = await watch.runner.trial(check);
+    expect([fresh.outcome, fresh.summary]).toEqual(["pass", "1 workflow passing on acme/site, last success 5 hours ago"]);
+    runs = runs.map((run) => ({ ...run, conclusion: "cancelled" }));
+    expect((await watch.runner.trial(check)).outcome).toBe("unknown");
+  });
+
   it("github says to install gh when it is missing", async () => {
     const { deps } = fakeDeps({});
     const watch = testWatch(deps);

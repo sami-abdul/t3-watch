@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { describeAge } from "../vendors.ts";
 import { type CheckRunner, unknown } from "./types.ts";
 
 const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
@@ -8,6 +9,11 @@ export const GitHubConfig = z.object({
   repo: repoName,
   branch: argument.optional(),
   workflow: argument.optional(),
+  /**
+   * Also fail when the newest successful run started longer ago than this. For scheduled
+   * workflows, whose last result stays green after GitHub skips or disables the schedule.
+   */
+  maxAgeSeconds: z.number().int().min(300).max(90 * 86400).optional(),
 });
 
 interface RunRow {
@@ -21,7 +27,10 @@ interface RunRow {
 const FAILED = new Set(["failure", "timed_out", "startup_failure", "action_required"]);
 const IGNORED = new Set(["cancelled", "skipped", "neutral", "stale", ""]);
 
-/** Fails when the latest finished run of any workflow on the branch failed. */
+/**
+ * Fails when the latest finished run of any workflow on the branch failed, or, with
+ * maxAgeSeconds, when the newest successful run is older than that.
+ */
 export const runGitHub: CheckRunner = async (check, { deps }) => {
   const parsed = GitHubConfig.safeParse(check.config);
   if (!parsed.success) return unknown("The check's settings are invalid");
@@ -63,9 +72,27 @@ export const runGitHub: CheckRunner = async (check, { deps }) => {
       summary: `${failed.map((r) => r.workflowName).join(", ")} failed on ${where}`,
       evidence: { runs: failed.map((r) => ({ workflow: r.workflowName, title: r.displayTitle, url: r.url, at: r.createdAt })) },
     };
+  const passing = `${latest.size} workflow${latest.size === 1 ? "" : "s"} passing on ${where}`;
+  if (c.maxAgeSeconds === undefined)
+    return { outcome: "pass", summary: passing, evidence: { workflows: [...latest.keys()] } };
+  const lastSuccessAt = runs
+    .filter((run) => run.status === "completed" && run.conclusion === "success")
+    .map((run) => run.createdAt)
+    .filter((at) => !Number.isNaN(Date.parse(at)))
+    .toSorted()
+    .at(-1);
+  if (lastSuccessAt === undefined)
+    return { outcome: "fail", summary: `No successful run in the last ${runs.length} on ${where}`, evidence: { workflows: [...latest.keys()] } };
+  const age = (deps.now().getTime() - Date.parse(lastSuccessAt)) / 1000;
+  if (age > c.maxAgeSeconds)
+    return {
+      outcome: "fail",
+      summary: `Last successful run ${describeAge(age)} ago on ${where}, more than ${describeAge(c.maxAgeSeconds)}`,
+      evidence: { lastSuccessAt, maxAgeSeconds: c.maxAgeSeconds },
+    };
   return {
     outcome: "pass",
-    summary: `${latest.size} workflow${latest.size === 1 ? "" : "s"} passing on ${where}`,
-    evidence: { workflows: [...latest.keys()] },
+    summary: `${passing}, last success ${describeAge(age)} ago`,
+    evidence: { workflows: [...latest.keys()], lastSuccessAt },
   };
 };

@@ -69,8 +69,10 @@ origin a description names.
 Shipped: Stripe, Pipedrive, Missive, Asana, Airtable, Jotform, Calendly, Vimeo, Sentry, OpenAI,
 Anthropic. Xero is recognised, but sign-in vendors aren't supported yet.
 
-Check kinds that need no vendor file: `http`, `github` (through `gh`), `aws_metric` (through the
-AWS CLI) and `heartbeat` (a job pings a URL; add `?status=fail` when it fails).
+Check kinds that need no vendor file: `http`, `github` (through `gh`; add `maxAgeSeconds` for a
+scheduled workflow, so a schedule GitHub skipped or disabled fails instead of staying green),
+`aws_metric` (through the AWS CLI) and `heartbeat` (a job pings a URL; add `?status=fail` when it
+fails).
 
 ## Development
 

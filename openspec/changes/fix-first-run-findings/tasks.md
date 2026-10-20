@@ -21,7 +21,7 @@
 
 ## 4. Checks
 
-- [ ] 4.1 `src/server/checks/github.ts`, `src/server/mcp.ts`, `README.md`: `maxAgeSeconds` on
+- [x] 4.1 `src/server/checks/github.ts`, `src/server/mcp.ts`, `README.md`: `maxAgeSeconds` on
       `github` checks.
 
 ## 5. Verification
