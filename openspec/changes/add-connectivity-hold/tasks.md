@@ -87,6 +87,14 @@
       `src/server/mcp.ts`, `src/web/Home.tsx`, `src/web/logic.test.ts`, `src/server/runner.test.ts`:
       the pending run keeps its outcome, summary and time, worded by outcome in one place, and
       shows in the history, the status, Home and the check's reply.
+- [x] 6.12 `src/server/runner.ts`, `src/server/store.ts`, `src/server/runner.test.ts`: a change made
+      at any point in a run wins over it, measured from the check as the run began, and an
+      identical definition no longer counts as a change.
+- [x] 6.13 `src/server/store.ts`, `src/server/store.test.ts`: a removed key clears a pending run, a
+      stored pending run is checked field by field, and its summary is capped like the history's.
+- [x] 6.14 `src/server/mcp.ts`, `src/server/runner.test.ts`: the `watch_set_check` reply drops its
+      unreachable pending line, since `watch_check` carries the pending run, and the probe-pause
+      test waits on the probe instead of a timer.
 - [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance, a check that fails once and then passes makes no event, and one that
       fails twice in a row makes one.

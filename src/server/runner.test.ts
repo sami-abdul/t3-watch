@@ -327,31 +327,76 @@ describe("runner while Watch is offline", () => {
     expect(watch.store.events()).toHaveLength(1);
   });
 
-  it("lets a pause made during the probe win over the run", async () => {
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => (release = resolve));
+  /** A Watch whose site request and probe each wait at a gate, to change the check mid-run. */
+  const gated = () => {
+    const gates = { site: Promise.resolve(), probe: Promise.resolve() };
+    let reached = { site: () => {}, probe: () => {} };
+    const at = (name: "site" | "probe") => {
+      let open = () => {};
+      gates[name] = new Promise<void>((resolve) => (open = resolve));
+      const there = new Promise<void>((resolve) => (reached = { ...reached, [name]: resolve }));
+      return { open, there };
+    };
     let site = true;
     const fake = fakeDeps({
       fetch: async (url) => {
-        if (url.href === SITE) return site ? new Response("ok") : new Response("down", { status: 503 });
-        await gate;
-        return new Response(null, { status: 204 });
+        const name = url.href === SITE ? "site" : "probe";
+        reached[name]();
+        await gates[name];
+        if (name === "probe") return new Response(null, { status: 204 });
+        return site ? new Response("ok") : new Response("down", { status: 503 });
       },
     });
     const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps });
-    watch.defineCheck(
-      { id: "site", serviceId: "s", kind: "http", intent: "The site answers", config: { url: SITE }, keyId: null, cadenceSeconds: 300, origin: "user" },
-      "on",
-    );
+    const define = () =>
+      watch.defineCheck(
+        { id: "site", serviceId: "s", kind: "http", intent: "The site answers", config: { url: SITE }, keyId: null, cadenceSeconds: 300, origin: "user" },
+        "on",
+      );
+    define();
+    return { watch, fake, at, define, down: () => (site = false) };
+  };
+
+  it("lets a pause made during the probe win over the run", async () => {
+    const { watch, fake, at, down } = gated();
     await watch.runner.tick();
-    site = false;
+    down();
     fake.advance(301);
+    const probe = at("probe");
     const ticking = watch.runner.tick();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await probe.there;
     await watch.setCheck("site", "pause");
-    release();
+    probe.open();
     await ticking;
     expect(watch.store.check("site")).toMatchObject({ state: "paused", pending: null, nextRunAt: null, lastOutcome: "pass" });
+  });
+
+  it("lets a pause made during the run itself win over it", async () => {
+    const { watch, fake, at, down } = gated();
+    await watch.runner.tick();
+    down();
+    fake.advance(301);
+    const site = at("site");
+    const ticking = watch.runner.tick();
+    await site.there;
+    await watch.setCheck("site", "pause");
+    site.open();
+    await ticking;
+    expect(watch.store.check("site")).toMatchObject({ state: "paused", pending: null, nextRunAt: null, lastOutcome: "pass" });
+  });
+
+  it("keeps the run when the same definition is applied again during the probe", async () => {
+    const { watch, fake, at, define, down } = gated();
+    await watch.runner.tick();
+    down();
+    fake.advance(301);
+    const probe = at("probe");
+    const ticking = watch.runner.tick();
+    await probe.there;
+    define();
+    probe.open();
+    await ticking;
+    expect(watch.store.check("site")!.pending).toMatchObject({ outcome: "fail" });
   });
 
   it("lets a held run sit between a pending run and the one that confirms it", async () => {

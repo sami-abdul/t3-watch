@@ -141,11 +141,20 @@ const toService = (r: Row): Service => ({
   foundIn: parse(r.found_in, []),
   updatedAt: String(r.updated_at),
 });
-/** The stored pending run, or null when there is none or it does not parse. */
+const OUTCOMES: ReadonlySet<unknown> = new Set(["pass", "fail", "unknown"]);
+
+/** The stored pending run, or null when there is none or any of its fields is missing or wrong. */
 const readPending = (value: unknown): PendingRun | null => {
   try {
-    const pending = parse<PendingRun | null>(value, null);
-    return pending !== null && typeof pending === "object" && typeof pending.outcome === "string" ? pending : null;
+    const pending = parse<Partial<PendingRun> | null>(value, null);
+    return pending !== null &&
+      typeof pending === "object" &&
+      OUTCOMES.has(pending.outcome) &&
+      typeof pending.summary === "string" &&
+      typeof pending.at === "string" &&
+      !Number.isNaN(Date.parse(pending.at))
+      ? (pending as PendingRun)
+      : null;
   } catch {
     return null;
   }
@@ -296,8 +305,10 @@ export const openStore = (file: string) => {
       const row = one("SELECT * FROM checks WHERE id = ?", id);
       return row === undefined ? null : toCheck(row);
     },
-    /** Inserts or replaces a check's definition, keeping its run state. */
-    /** Writes a check's definition and state. A pending run survives only the same kind, config and key. */
+    /**
+     * Inserts or replaces a check's definition, keeping its run state. A pending run survives only
+     * the same kind, config and key, and an identical definition leaves updated_at alone.
+     */
     upsertCheck: (c: Omit<Check, "pending">) =>
       exec(
         `INSERT INTO checks (id, service_id, kind, intent, config, key_id, cadence_seconds, state,
@@ -308,7 +319,10 @@ export const openStore = (file: string) => {
            intent = excluded.intent, config = excluded.config, key_id = excluded.key_id,
            cadence_seconds = excluded.cadence_seconds, state = excluded.state,
            snoozed_until = excluded.snoozed_until, next_run_at = excluded.next_run_at,
-           updated_at = excluded.updated_at,
+           updated_at = CASE WHEN service_id IS excluded.service_id AND kind = excluded.kind
+             AND intent = excluded.intent AND config = excluded.config AND key_id IS excluded.key_id
+             AND cadence_seconds = excluded.cadence_seconds AND state = excluded.state
+             AND snoozed_until IS excluded.snoozed_until THEN updated_at ELSE excluded.updated_at END,
            pending = CASE WHEN kind = excluded.kind AND config = excluded.config AND key_id IS excluded.key_id
              THEN pending ELSE NULL END`,
         c.id,
@@ -419,7 +433,7 @@ export const openStore = (file: string) => {
     ) => {
       const summary = `${pendingText(result.outcome)}: ${result.summary}`.slice(0, 300);
       setAside(checkId, at, result.outcome, summary, result.evidence, durationMs, nextRunAt);
-      exec("UPDATE checks SET pending = ? WHERE id = ?", json({ outcome: result.outcome, summary: result.summary, at }), checkId);
+      exec("UPDATE checks SET pending = ? WHERE id = ?", json({ outcome: result.outcome, summary: result.summary.slice(0, 300), at }), checkId);
     },
     /**
      * How many held runs a check has had since its last run recorded while Watch was online. A run
@@ -492,7 +506,7 @@ export const openStore = (file: string) => {
       exec("UPDATE keys SET removed_at = ?, ciphertext = '' WHERE id = ?", at, id);
       // Checks that used the key cannot run without it.
       exec(
-        "UPDATE checks SET state = 'paused', updated_at = ? WHERE key_id = ? AND state = 'on'",
+        "UPDATE checks SET state = 'paused', updated_at = ?, pending = NULL WHERE key_id = ? AND state = 'on'",
         at,
         id,
       );

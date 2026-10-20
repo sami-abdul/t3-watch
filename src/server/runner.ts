@@ -20,7 +20,8 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       const result = await runCheck(check, context);
       const finished = context.deps.now();
       const fresh = context.store.check(check.id);
-      if (fresh === null) return null;
+      // A pause, snooze or new definition made while this run was in flight wins over it.
+      if (fresh === null || fresh.updatedAt !== check.updatedAt) return null;
       const nextRunAt = new Date(finished.getTime() + fresh.cadenceSeconds * 1000).toISOString();
       // A failure may only mean Watch's own link is down. One that would change the check's state
       // probes; one that changes nothing probes only while Watch already counts itself offline,
@@ -31,8 +32,8 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
         if (provesInternet(fresh, context.vendors())) link.sawInternet();
       } else if (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline())) {
         const offline = await link.hold();
-        // A pause, snooze or new definition made during the probe wins over this run.
-        if (context.store.check(fresh.id)?.updatedAt !== fresh.updatedAt) return result;
+        // And one made while the probe ran.
+        if (context.store.check(fresh.id)?.updatedAt !== check.updatedAt) return null;
         const capped = context.store.heldStreak(fresh.id) >= Math.ceil(MAX_HOLD_MS / 1000 / fresh.cadenceSeconds);
         if (offline && !capped) {
           context.store.recordHeld(fresh.id, result, finished.toISOString(), finished.getTime() - started.getTime(), nextRunAt);

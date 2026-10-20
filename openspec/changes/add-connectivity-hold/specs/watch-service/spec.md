@@ -66,9 +66,9 @@ Held runs SHALL NOT count either way. The next run that is not held SHALL confir
 pending run whenever it comes, and pausing, resuming, snoozing or redefining the check SHALL
 clear it. A run someone asks for SHALL record its result as it is. A pending failure confirmed by
 a run that could not run SHALL still make an event. A pass, and a change between failing and not
-being able to run, SHALL count at once. A pause, snooze or new definition made while a run waits
-on a probe SHALL win over that run. The history, the text status, Home and the check's own reply
-SHALL show a pending run's result and time, as failed once or could not run once, being checked
+being able to run, SHALL count at once. A pause, snooze, removed key or new definition made while a
+run is in flight SHALL win over that run, and applying the same definition again SHALL NOT. The
+history, the text status, Home and `watch_check` SHALL show a pending run's result and time, as failed once or could not run once, being checked
 again.
 
 #### Scenario: One bad run

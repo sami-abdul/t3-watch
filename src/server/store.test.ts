@@ -29,4 +29,29 @@ describe("store", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("clears a pending run when a removed key pauses its check, and reads only well-formed ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t3w-store-"));
+    try {
+      const file = join(dir, "watch.sqlite");
+      const store = openStore(file);
+      const at = "2026-10-15T10:00:00.000Z";
+      store.upsertCheck({
+        id: "c", serviceId: "s", kind: "vendor", intent: "The key works", config: {}, keyId: "k1", cadenceSeconds: 60, state: "on",
+        snoozedUntil: null, nextRunAt: null, origin: "user", lastOutcome: "pass", lastSummary: null, lastRunAt: null, createdAt: at, updatedAt: at,
+      });
+      store.recordPending("c", { outcome: "fail", summary: "x".repeat(400), evidence: {} }, at, 1, at);
+      expect(store.check("c")!.pending!.summary).toHaveLength(300);
+      store.removeKey("k1", at);
+      expect(store.check("c")).toMatchObject({ state: "paused", pending: null });
+      // A stored pending run missing a field reads as none.
+      const raw = new DatabaseSync(file);
+      raw.exec(`UPDATE checks SET pending = '{"outcome":"fail"}' WHERE id = 'c'`);
+      raw.close();
+      expect(store.check("c")!.pending).toBeNull();
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
