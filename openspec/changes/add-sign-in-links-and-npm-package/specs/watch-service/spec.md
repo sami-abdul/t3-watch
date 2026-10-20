@@ -17,6 +17,24 @@ unknown code and SHALL NOT accept the access token.
 - **WHEN** a sign-in link is opened 11 minutes after it was made
 - **THEN** it is refused
 
+### Requirement: Browser sessions
+
+Opening a sign-in link SHALL show a Sign in button, and only its POST SHALL use the code, so a
+link preview cannot spend it. A used code SHALL give the browser its own random session, stored as
+a hash, never the access token. `t3-watch signout` SHALL end every browser session without
+changing the access token.
+
+#### Scenario: A chat previews the link
+
+- **WHEN** a chat fetches a sign-in link with GET to build a preview, and the person then presses
+  Sign in
+- **THEN** the person is signed in, and the preview fetch got neither a session nor the token
+
+#### Scenario: Signing every browser out
+
+- **WHEN** the person runs `t3-watch signout`
+- **THEN** every browser needs a new sign-in link, and agents using the access token keep working
+
 ### Requirement: Loopback listener
 
 When `host` names one address that is not loopback and not every interface, the service SHALL also

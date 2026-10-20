@@ -20,11 +20,25 @@
 - [x] 3.1 `package.json`, `.gitignore`: metadata, `prepack`, `prepublishOnly`, `files`.
 - [ ] 3.2 `README.md`: install from npm, after the first publish.
 
-## 4. Verification
+## 4. Review follow-ups
 
-- [ ] 4.1 `pnpm test`; `pnpm typecheck`; `pnpm build`;
+- [ ] 4.1 `src/server/http.ts`, `src/server/http.test.ts`: opening a link shows a Sign in button
+      that posts the code, so a link preview cannot spend it.
+- [ ] 4.2 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`,
+      `src/server/http.ts`, `src/server/extend.ts`, `src/server/cli.ts`, `src/server/cli.test.ts`,
+      `src/server/chat.test.ts`, `README.md`: a browser gets its own session, never the access
+      token; `t3-watch signout` ends every browser session.
+- [ ] 4.3 `src/server/store.ts`: the busy timeout comes before WAL; one write per sign-in try.
+- [ ] 4.4 `src/server/http.ts`, `src/server/mcp.ts`, `src/server/cli.ts`: one expiry constant in
+      every message; the install comment matches what it prints.
+- [ ] 4.5 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` warns when no Watch answers for
+      that folder; its test ignores port and host overrides.
+
+## 5. Verification
+
+- [ ] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`;
       `openspec validate add-sign-in-links-and-npm-package --strict`.
-- [ ] 4.2 `npm pack`; `npm install -g --prefix <scratch> <tarball>`; `t3-watch` help, start and
+- [ ] 5.2 `npm pack`; `npm install -g --prefix <scratch> <tarball>`; `t3-watch` help, start and
       status from the scratch prefix.
-- [ ] 4.3 On the running install: a one-time link signs a browser in once and is refused the
+- [ ] 5.3 On the running install: a one-time link signs a browser in once and is refused the
       second time; 127.0.0.1:8460 and the tailnet address both answer.
