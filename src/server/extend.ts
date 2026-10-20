@@ -44,8 +44,10 @@ export const extendServer = (options: {
     return true;
   };
 
-  // The reply is the secret itself, so only the signed-in page gets it, never the API token that
-  // agents hold. MCP has no way to it either, so the secret stays out of chats.
+  // The reply is the secret itself, so it goes to the signed-in page and not to the API token
+  // agents use, and MCP has no way to it. That keeps it out of chats an agent writes by habit; it
+  // does not stop an agent that forges the page's cookie, since anything running as this user can
+  // read Watch's files anyway.
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
     const config = options.config();

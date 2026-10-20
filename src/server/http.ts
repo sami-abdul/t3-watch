@@ -48,10 +48,14 @@ export const fromPage = (request: IncomingMessage, publicUrl: string | null) => 
   const site = request.headers["sec-fetch-site"];
   if (site !== undefined && site !== "same-origin") return false;
   const origin = request.headers.origin;
-  const host = request.headers.host;
   if (origin === undefined) return false;
+  // A proxy in front, such as tailscale serve, may forward the browser's host in X-Forwarded-Host.
+  const forwarded = request.headers["x-forwarded-host"];
+  const hosts = [request.headers.host, ...(typeof forwarded === "string" ? forwarded.split(",") : [])]
+    .filter((host): host is string => host !== undefined)
+    .map((host) => host.trim());
   const allowed = [
-    ...(host === undefined ? [] : [`http://${host}`, `https://${host}`]),
+    ...hosts.flatMap((host) => [`http://${host}`, `https://${host}`]),
     ...(publicUrl === null ? [] : [URL.parse(publicUrl)?.origin ?? ""]),
   ];
   return allowed.includes(origin);
