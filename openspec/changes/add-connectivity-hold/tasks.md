@@ -59,3 +59,14 @@
 - [x] 5.2 On a throwaway instance whose probe addresses are unreachable: a failing check is held
       with no event, and the page shows the notice; with the probe answering, the same failure
       makes an event.
+
+## 6. Two runs before a failure
+
+- [ ] 6.1 `src/server/store.ts`, `src/server/runner.ts`, `src/server/runner.test.ts`: a non-passing
+      run after a pass, or a new check's first, is pending and runs again within a minute; only the
+      second in a row fails the check and makes an event.
+- [ ] 6.2 Tests that expected a failure on one run wait for the confirming run.
+- [ ] 6.3 `README.md`: one bad run does not alert.
+- [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
+      on a throwaway instance, a check that fails once and then passes makes no event, and one that
+      fails twice in a row makes one.

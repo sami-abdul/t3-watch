@@ -55,3 +55,28 @@ NOT write `probeUrls` into `config.json` unless someone set it there.
 
 - **WHEN** `probeUrls` names an address the network allows
 - **THEN** Watch probes only that address
+
+### Requirement: Two non-passing runs before a check fails
+
+A check whose last result was a pass, or that has no result yet, SHALL NOT change state on one run
+that does not pass. Watch SHALL keep that run in the check's history marked as pending and SHALL
+run the check again within 60 seconds, or within its cadence when that is shorter. Only when that
+next run does not pass either SHALL the check take its result, with a change event and an alert.
+Held runs SHALL NOT count either way. A pending run SHALL count only for a run that follows it
+within twice the check's cadence or 2 minutes, whichever is longer. A pass, and a change between
+failing and not being able to run, SHALL count at once.
+
+#### Scenario: One bad run
+
+- **WHEN** a passing check fails once and passes when it runs again a minute later
+- **THEN** it stays passing and no event is made
+
+#### Scenario: Two bad runs in a row
+
+- **WHEN** a passing check fails, and fails again a minute later
+- **THEN** it fails after the second run and one event is made
+
+#### Scenario: Recovery
+
+- **WHEN** a failing check passes once
+- **THEN** it passes at once and an event is made

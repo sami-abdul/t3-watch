@@ -3,7 +3,8 @@
 When Watch's own machine loses its connection, every check that needs the internet fails at
 once and each failure becomes an alert. On 2026-10-20 Leviathan's saturated, lossy link made 13
 of 22 checks fail while the sites themselves answered. People learn to ignore an alert that cries
-wolf, and the alerts cannot even leave the machine while the link is down.
+wolf, and the alerts cannot even leave the machine while the link is down. A lossy link is worse
+to detect: the probes still answer, so a single dropped request still reads as an outage.
 
 ## What Changes
 
@@ -22,6 +23,8 @@ wolf, and the alerts cannot even leave the machine while the link is down.
   itself offline 30 minutes after its last failed probe.
 - **People can see it.** Watch remembers when it went offline. Home and the text status say so
   until a probe answers or a check that needs the internet passes.
+- **One bad run does not alert.** A check that was passing fails only when two runs in a row do
+  not pass; the second runs within a minute of the first, and a pass counts at once.
 - **The probe addresses can be changed** with `probeUrls` in `config.json`, for networks that block
   the defaults; an empty list turns holding off.
 
