@@ -55,7 +55,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`.
-- [ ] 5.2 On a throwaway instance whose probe addresses are unreachable: a failing check is held
+- [x] 5.1 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`.
+- [x] 5.2 On a throwaway instance whose probe addresses are unreachable: a failing check is held
       with no event, and the page shows the notice; with the probe answering, the same failure
       makes an event.
