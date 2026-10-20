@@ -17,7 +17,7 @@
 
 ## 3. Docs
 
-- [ ] 3.1 `README.md`: what Watch does when its own link is down, and `probeUrls`.
+- [x] 3.1 `README.md`: what Watch does when its own link is down, and `probeUrls`.
 
 ## 4. Verification
 

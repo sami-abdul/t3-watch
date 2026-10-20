@@ -61,6 +61,18 @@ Things to ask:
   failing, recovers or can't run wakes the thread, and the agent looks into it before you open
   it. Checks that keep passing send nothing.
 
+## When Watch's own connection drops
+
+When a check that needs the internet stops passing, Watch first asks whether it can reach the
+internet at all. If no other such check passed in the last 2 minutes, and neither
+`https://www.gstatic.com/generate_204` nor `https://one.one.one.one/cdn-cgi/trace` answers within
+5 seconds, it holds the result: the run shows in the check's history as held, the check keeps its
+last result, and nothing alerts. Home and the Watch thread's status say when Watch lost its
+connection. Heartbeats and checks on localhost are never held.
+
+If your network blocks those two addresses, list ones it allows as `probeUrls` in
+`~/.t3-watch/config.json` and restart Watch. An empty list turns holding off.
+
 ## Vendors
 
 Each vendor is a JSON file in [`catalog/`](catalog): how to spot it in a project, which variable
