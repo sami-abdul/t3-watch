@@ -52,6 +52,14 @@
       accepts a forwarding proxy's host, and its comment states what it does not stop.
 - [x] 5.13 `src/web/Details.tsx`: the folder list retries on each refresh until it loads.
 - [x] 5.14 `src/web/Details.tsx`: the replace prompt clears when alerts turn off.
+- [ ] 5.15 `src/web/Details.tsx`: the replace prompt resets, rather than hides, when alerts go off.
+- [ ] 5.16 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with no success in the runs
+      read, fail only when those runs reach back past `maxAgeSeconds`.
+- [ ] 5.17 `src/server/http.ts`, `src/server/chat.test.ts`: drop the X-Forwarded-Host trust;
+      `publicUrl` names a proxy's origin.
+- [ ] 5.18 `src/web/Details.tsx`: a late folder-list reply cannot overwrite a newer one.
+- [ ] 5.19 `src/server/cli.ts`: the systemd unit and the printed commands quote their paths.
+- [ ] 5.20 `src/server/config.ts`: one helper strips IPv6 brackets.
 
 ## 6. Verification
 
