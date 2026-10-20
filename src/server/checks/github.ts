@@ -33,8 +33,9 @@ const FAILED = new Set(["failure", "timed_out", "startup_failure", "action_requi
 const IGNORED = new Set(["cancelled", "skipped", "neutral", "stale", ""]);
 
 /**
- * Fails when the latest finished run of any workflow on the branch failed, or, with
- * maxAgeSeconds, when the newest successful run is older than that.
+ * Fails when the latest finished run of any workflow on the branch failed. With maxAgeSeconds it
+ * also fails when the workflow's newest success is older than that, including when no run read
+ * succeeded and those runs reach back further than that.
  */
 export const runGitHub: CheckRunner = async (check, { deps }) => {
   const parsed = GitHubConfig.safeParse(check.config);
@@ -70,11 +71,15 @@ export const runGitHub: CheckRunner = async (check, { deps }) => {
   }
   const where = c.branch === undefined ? c.repo : `${c.branch} in ${c.repo}`;
   if (latest.size === 0) {
-    // A schedule that only gets skipped or cancelled has gone stale too.
-    const finished = runs.filter((run) => run.status === "completed").length;
-    return c.maxAgeSeconds !== undefined && finished > 0
-      ? { outcome: "fail", summary: `No successful run in the last ${finished} finished runs on ${where}`, evidence: { finished } }
-      : unknown("No finished runs yet");
+    const finished = runs.filter((run) => run.status === "completed");
+    if (c.maxAgeSeconds === undefined || finished.length === 0) return unknown("No finished runs yet");
+    // No run read succeeded, so the newest success is older than the oldest of them. Only when
+    // that reaches past the limit is the schedule known to be stale.
+    const oldest = Math.min(...finished.map((run) => Date.parse(run.createdAt)).filter((t) => !Number.isNaN(t)));
+    const span = (deps.now().getTime() - oldest) / 1000;
+    return span > c.maxAgeSeconds
+      ? { outcome: "fail", summary: `No successful run for more than ${describeAge(c.maxAgeSeconds)} on ${where}`, evidence: { finished: finished.length } }
+      : unknown(`No successful run in the last ${finished.length} finished run${finished.length === 1 ? "" : "s"} yet`);
   }
   const failed = [...latest.values()].filter((run) => FAILED.has(run.conclusion));
   if (failed.length > 0)

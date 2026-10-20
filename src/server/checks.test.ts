@@ -48,9 +48,14 @@ describe("check kinds", () => {
     runs = [{ ...runs[0]!, createdAt: "2026-10-15T05:00:00Z" }, ...runs];
     const fresh = await watch.runner.trial(check);
     expect([fresh.outcome, fresh.summary]).toEqual(["pass", "1 workflow passing on acme/site, last success 5 hours ago"]);
+    // Skipped runs reaching back past the limit, with no success among them: stale.
     runs = runs.map((run) => ({ ...run, conclusion: "skipped" }));
     const skipped = await watch.runner.trial(check);
-    expect([skipped.outcome, skipped.summary]).toEqual(["fail", "No successful run in the last 3 finished runs on acme/site"]);
+    expect([skipped.outcome, skipped.summary]).toEqual(["fail", "No successful run for more than 6 hours on acme/site"]);
+    // A single cancelled run from an hour ago says nothing about the limit yet.
+    runs = [{ ...runs[0]!, conclusion: "cancelled", createdAt: "2026-10-15T09:00:00Z" }];
+    const early = await watch.runner.trial(check);
+    expect([early.outcome, early.summary]).toEqual(["unknown", "No successful run in the last 1 finished run yet"]);
     runs = runs.map((run) => ({ ...run, status: "queued", conclusion: "" }));
     expect((await watch.runner.trial(check)).outcome).toBe("unknown");
   });

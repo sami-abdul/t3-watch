@@ -53,7 +53,7 @@
 - [x] 5.13 `src/web/Details.tsx`: the folder list retries on each refresh until it loads.
 - [x] 5.14 `src/web/Details.tsx`: the replace prompt clears when alerts turn off.
 - [x] 5.15 `src/web/Details.tsx`: the replace prompt resets, rather than hides, when alerts go off.
-- [ ] 5.16 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with no success in the runs
+- [x] 5.16 `src/server/checks/github.ts`, `src/server/checks.test.ts`: with no success in the runs
       read, fail only when those runs reach back past `maxAgeSeconds`.
 - [ ] 5.17 `src/server/http.ts`, `src/server/chat.test.ts`: drop the X-Forwarded-Host trust;
       `publicUrl` names a proxy's origin.
