@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -18,6 +18,7 @@ describe("t3-watch url", () => {
       const cli = join(import.meta.dirname, "cli.ts");
       // Overrides in the developer's shell would change the address the link names.
       const { T3_WATCH_PORT: _port, T3_WATCH_HOST: _host, ...rest } = process.env;
+      writeFileSync(join(home, "config.json"), JSON.stringify({ token: "t3w-url-test-token-0123456789" }));
       const run = spawnSync(process.execPath, [cli, "url"], { env: { ...rest, T3_WATCH_HOME: home }, encoding: "utf8" });
       const link = run.stdout.trim();
       // No Watch runs with this scratch folder, so the CLI says the link cannot work yet.
@@ -30,6 +31,22 @@ describe("t3-watch url", () => {
       expect(useSignInCode(store, code, new Date())).toBe(true);
       expect(useSignInCode(store, code, new Date())).toBe(false);
       store.close();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("says when the folder holds no Watch, and creates nothing there", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-none-"));
+    try {
+      const cli = join(import.meta.dirname, "cli.ts");
+      for (const command of ["url", "status"]) {
+        const run = spawnSync(process.execPath, [cli, command], { env: { ...process.env, T3_WATCH_HOME: home }, encoding: "utf8" });
+        expect(run.status).toBe(1);
+        expect(run.stdout + run.stderr).toContain("No Watch in");
+        expect(run.stdout).not.toContain("/signin");
+      }
+      expect(readdirSync(home)).toEqual([]);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

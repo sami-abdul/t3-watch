@@ -132,8 +132,7 @@ export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> 
 };
 
 /** A one-time sign-in link, made in Watch's database so the running service accepts it. */
-const freshSignInLink = (home: string) => {
-  const config = loadConfig(home);
+const freshSignInLink = (home: string, config: WatchConfig) => {
   const store = openStore(join(home, "watch.sqlite"));
   try {
     return signInLink(pageUrl(config), makeSignInCode(store, new Date()));
@@ -241,7 +240,7 @@ WantedBy=default.target
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // The link is one-time and short-lived, and never carries the access token, so it is safe to
   // print even when an agent runs install.
-  console.log(`Open this link within ${SIGN_IN_MINUTES} minutes to sign in. It works once: ${freshSignInLink(home)}`);
+  console.log(`Open this link within ${SIGN_IN_MINUTES} minutes to sign in. It works once: ${freshSignInLink(home, config)}`);
   console.log(`For another browser, run: ${shellQuote(node!)} ${shellQuote(bin!)} url`);
   if (platform() === "linux")
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
@@ -262,8 +261,17 @@ const uninstall = async () => {
   console.log(`Removed the service and MCP registrations. Your data stays in ${watchHome()}.`);
 };
 
+/** Whether a folder holds a Watch, checked before a command that would otherwise create one there. */
+const holdsWatch = (home: string) => existsSync(join(home, "config.json")) || existsSync(join(home, "watch.sqlite"));
+
 const status = async () => {
-  const config = loadConfig();
+  const home = watchHome();
+  if (!holdsWatch(home)) {
+    console.log(`No Watch in ${home}. Set it up with t3-watch install.`);
+    process.exitCode = 1;
+    return;
+  }
+  const config = loadConfig(home);
   const result = await probe(config);
   if (result.kind === "running") {
     const on = result.checks.filter((c) => c.state === "on");
@@ -275,7 +283,7 @@ const status = async () => {
     result.kind === "slow"
       ? `Watch did not answer at ${localUrl(config)} within ${PROBE_MS / 1000} seconds. It may be busy; try again.`
       : result.kind === "refused"
-        ? `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${watchHome()}.`
+        ? `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${home}.`
         : result.kind === "unexpected"
           ? `${localUrl(config)} answered with ${result.answer}. If that is Watch, its log says why; if not, another program holds the port.`
           : "Not running. Start it with t3-watch start, or t3-watch install.",
@@ -302,14 +310,13 @@ export const main = async (args: ReadonlyArray<string>) => {
     else if (command === "uninstall") await uninstall();
     else if (command === "signout") {
       const home = watchHome();
-      const database = join(home, "watch.sqlite");
       // Opening the store would make an empty one, and "Signed out 0 browsers" would hide the typo.
-      if (!existsSync(database)) {
+      if (!holdsWatch(home)) {
         console.error(`No Watch in ${home}, so there is no browser to sign out.`);
         process.exitCode = 1;
         return;
       }
-      const store = openStore(database);
+      const store = openStore(join(home, "watch.sqlite"));
       try {
         const ended = store.clearSessions();
         console.log(`Signed out ${ended} browser${ended === 1 ? "" : "s"}. Agents keep working. Sign in again with t3-watch url.`);
@@ -317,11 +324,17 @@ export const main = async (args: ReadonlyArray<string>) => {
         store.close();
       }
     } else if (command === "url") {
-      // The link alone on stdout, so scripts can take it; the notes go to stderr.
       const home = watchHome();
-      console.log(freshSignInLink(home));
+      if (!holdsWatch(home)) {
+        console.error(`No Watch in ${home}. Set it up with t3-watch install, or point T3_WATCH_HOME at Watch's folder.`);
+        process.exitCode = 1;
+        return;
+      }
+      const config = loadConfig(home);
+      // The link alone on stdout, so scripts can take it; the notes go to stderr.
+      console.log(freshSignInLink(home, config));
       console.error(`It works once, within ${SIGN_IN_MINUTES} minutes.`);
-      const result = await probe(loadConfig(home));
+      const result = await probe(config);
       if (result.kind === "slow")
         console.error(`Watch did not answer within ${PROBE_MS / 1000} seconds, so this link is unchecked. It works if Watch is running with ${home}.`);
       else if (result.kind !== "running")

@@ -47,7 +47,7 @@
 - [x] 4.10 `src/server/cli.ts`, `src/server/cli.test.ts`: the probe tells a refused token (401 or
       403) from an error status and from a port that answers with something other than Watch's
       state, and checks each check's shape before status reads it.
-- [ ] 4.11 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` and `status` say when a folder holds
+- [x] 4.11 `src/server/cli.ts`, `src/server/cli.test.ts`: `url` and `status` say when a folder holds
       no Watch instead of creating one there; `url` loads its config once.
 - [ ] 4.12 `src/server/cli.test.ts`: the probe's nothing-listening case waits for its port to close.
 - [ ] 4.13 `src/server/http.ts`, `src/server/http.test.ts`: a press counts as from the page when the
