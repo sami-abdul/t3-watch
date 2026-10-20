@@ -59,7 +59,9 @@ Things to ask:
   thread that checks Watch's signature, and gives Watch the task's address. The secret never
   passes through the chat, and Watch refuses one sent over MCP. From then on, a check that starts
   failing, recovers or can't run wakes the thread, and the agent looks into it before you open
-  it. Checks that keep passing send nothing.
+  it. Checks that keep passing send nothing. A check that was passing counts as failing only
+  when two runs in a row do not pass; Watch runs it again within a minute of the first, so one
+  dropped request wakes nobody. A recovery counts at once.
 
 ## When Watch's own connection drops
 

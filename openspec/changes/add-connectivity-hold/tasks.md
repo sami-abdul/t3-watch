@@ -67,7 +67,7 @@
       second in a row fails the check and makes an event.
 - [x] 6.2 `src/server/runner.test.ts`, `src/server/chat.test.ts`: tests that expected a failure on one
       run wait for the confirming run.
-- [ ] 6.3 `README.md`: one bad run does not alert.
+- [x] 6.3 `README.md`: one bad run does not alert.
 - [ ] 6.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance, a check that fails once and then passes makes no event, and one that
       fails twice in a row makes one.
