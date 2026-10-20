@@ -3,6 +3,25 @@
   "version": "0.1.0",
   "description": "Watches the systems you run, sets itself up from your projects, and talks to your agents over MCP.",
   "license": "MIT",
+  "author": "Abdul Sami",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sami-abdul/t3-watch.git"
+  },
+  "homepage": "https://github.com/sami-abdul/t3-watch#readme",
+  "bugs": {
+    "url": "https://github.com/sami-abdul/t3-watch/issues"
+  },
+  "keywords": [
+    "mcp",
+    "monitoring",
+    "uptime",
+    "github-actions",
+    "agents",
+    "t3",
+    "codex",
+    "claude-code"
+  ],
   "type": "module",
   "bin": {
     "t3-watch": "bin/t3-watch.js"
@@ -24,7 +43,9 @@
     "build:web": "vite build",
     "build:app": "vite build --mode app",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.3.1",
@@ -54,5 +75,8 @@
     "vite-plugin-singlefile": "2.3.3",
     "vitest": "5.0.4"
   },
-  "packageManager": "pnpm@11.10.0"
+  "packageManager": "pnpm@11.10.0",
+  "publishConfig": {
+    "access": "public"
+  }
 }
