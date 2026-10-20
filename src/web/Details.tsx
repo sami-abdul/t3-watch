@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Run } from "../server/store.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
@@ -55,6 +55,10 @@ export function Details({
   const now = new Date(state.generatedAt);
   const [error, setError] = useState<string | null>(null);
   const [roots, setRoots] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<ReadonlyArray<string> | null>(null);
+  useEffect(() => {
+    client.roots?.().then(setConfigured, () => {});
+  }, [client]);
   const act = async (work: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -177,7 +181,7 @@ export function Details({
           <textarea
             className={cn("w-full rounded-lg border border-border bg-transparent p-3 font-mono text-foreground", typeClass("caption"))}
             rows={3}
-            value={roots ?? state.setup.scan?.roots.join("\n") ?? ""}
+            value={roots ?? (configured ?? state.setup.scan?.roots ?? []).join("\n")}
             onChange={(e) => setRoots(e.target.value)}
           />
           <Button
@@ -186,7 +190,9 @@ export function Details({
             disabled={roots === null}
             onClick={() =>
               act(async () => {
-                await client.saveRoots!((roots ?? "").split("\n").map((r) => r.trim()).filter(Boolean));
+                const list = (roots ?? "").split("\n").map((r) => r.trim()).filter(Boolean);
+                await client.saveRoots!(list);
+                setConfigured(list);
                 setRoots(null);
               })
             }

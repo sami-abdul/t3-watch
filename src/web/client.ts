@@ -19,6 +19,8 @@ export interface WatchClient {
   /** Null where keys cannot be pasted, such as inside a chat: there `openPage` is used. */
   readonly addKey: ((vendor: string, value: string) => Promise<AddKeyResult>) | null;
   readonly removeKey: ((id: string) => Promise<void>) | null;
+  /** The folders setup scans, from the config. Null where they cannot be edited. */
+  readonly roots: (() => Promise<ReadonlyArray<string>>) | null;
   readonly saveRoots: ((roots: ReadonlyArray<string>) => Promise<void>) | null;
   /** Hands a question to the Watch thread. Returns what the person should know. */
   readonly ask: (text: string) => Promise<string>;
@@ -56,6 +58,7 @@ export const httpClient: WatchClient = {
   removeKey: async (id) => {
     await request(`/api/keys/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
+  roots: async () => (await request<{ roots: Array<string> }>("/api/settings")).roots,
   saveRoots: async (roots) => {
     await post("/api/settings", { roots });
   },

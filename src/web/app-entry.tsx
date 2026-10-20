@@ -49,6 +49,7 @@ const mcpClient: WatchClient = {
   // Keys are never typed into a chat surface: Add key opens the page instead.
   addKey: null,
   removeKey: null,
+  roots: null,
   saveRoots: null,
   ask: async (text) => {
     await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
