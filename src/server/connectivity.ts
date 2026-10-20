@@ -18,10 +18,14 @@ const PROBE_REUSE_MS = 15_000;
 const PROBE_TIMEOUT_MS = 5000;
 /** Without a newer failed probe, Watch stops counting itself offline after this long. */
 const OFFLINE_LAPSE_MS = 30 * 60_000;
+/** Holding stops after this long offline, so a wrong probe list cannot hide failures for good. */
+export const MAX_HOLD_MS = 60 * 60_000;
 
 export interface Link {
   /** When Watch found it could not reach the internet, or null while it can. */
   readonly offlineSince: string | null;
+  /** Whether failures are held; false once Watch has been offline for over an hour. */
+  readonly holding: boolean;
 }
 
 const LOCAL_NAMES = /(^|\.)(local|lan|internal|home\.arpa|ts\.net)$/;
@@ -54,11 +58,14 @@ export const needsInternet = (check: Pick<Check, "kind" | "config">) => {
   return url !== null && !isLocalHost(url.hostname);
 };
 
-/** The probeUrls setting as a list, or the defaults when it is missing or malformed. */
+const isProbeUrl = (url: unknown) => {
+  const parsed = typeof url === "string" ? URL.parse(url) : null;
+  return parsed !== null && (parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.hostname !== "";
+};
+
+/** The probeUrls setting as a list, or the defaults when it is missing or any address does not parse. */
 export const probeUrls = (setting: unknown): ReadonlyArray<string> =>
-  Array.isArray(setting) && setting.every((url) => typeof url === "string" && /^https?:\/\//.test(url))
-    ? setting
-    : DEFAULT_PROBE_URLS;
+  Array.isArray(setting) && setting.every(isProbeUrl) ? (setting as ReadonlyArray<string>) : DEFAULT_PROBE_URLS;
 
 /** `setting` is read on each probe, so a reloaded config applies without a restart. */
 export const makeConnectivity = (deps: Deps, setting: () => unknown = () => undefined) => {
@@ -71,6 +78,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
 
   /** When the current offline spell began, while a failed probe in the last 30 minutes vouches for it. */
   const since = () => (offlineSince !== null && now() - lastFailedProbeAt <= OFFLINE_LAPSE_MS ? offlineSince : null);
+  const holding = (from: number | null) => from !== null && now() - from <= MAX_HOLD_MS;
 
   /** True when any address answers at all; an empty list never counts as offline. */
   const reach = async (urls: ReadonlyArray<string>) => {
@@ -108,7 +116,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   return {
     link: (): Link => {
       const from = since();
-      return { offlineSince: from === null ? null : new Date(from).toISOString() };
+      return { offlineSince: from === null ? null : new Date(from).toISOString(), holding: holding(from) };
     },
     /** A check that needs the internet passed, which proves the link works. */
     sawInternet: () => {
@@ -116,7 +124,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
       offlineSince = null;
     },
     /** Whether a failure from a check that needs the internet should be held now. */
-    hold: async () => !(await probeNow()) && since() !== null,
+    hold: async () => !(await probeNow()) && holding(since()),
   };
 };
 export type Connectivity = ReturnType<typeof makeConnectivity>;

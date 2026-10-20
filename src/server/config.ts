@@ -12,8 +12,11 @@ export interface WatchConfig {
   readonly roots: ReadonlyArray<string>;
   /** Public base URL of the page when it is reached through a proxy such as Tailscale. */
   readonly publicUrl: string | null;
-  /** Addresses Watch probes to tell its own lost link from a site going down; [] turns that off. */
-  readonly probeUrls?: ReadonlyArray<string>;
+  /**
+   * Addresses Watch probes to tell its own lost link from a site going down; [] turns that off.
+   * Kept as written in config.json and checked where it is used.
+   */
+  readonly probeUrls?: unknown;
 }
 
 export const watchHome = () => process.env.T3_WATCH_HOME ?? join(homedir(), ".t3-watch");

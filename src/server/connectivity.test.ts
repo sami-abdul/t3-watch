@@ -67,10 +67,25 @@ describe("connectivity", () => {
     off.net.up = false;
     expect(await off.link.hold()).toBe(false);
     expect(off.net.calls).toEqual([]);
-    // A malformed setting falls back to the defaults.
-    const bad = setup(["ftp://probe.example/"]);
-    await bad.link.hold();
-    expect(bad.net.calls).toEqual([...DEFAULT_PROBE_URLS]);
+    // A setting with any address that does not parse falls back to the defaults.
+    for (const setting of [["ftp://probe.example/"], ["https://probe .example/"], ["https://ok.example/", 7]]) {
+      const bad = setup(setting as ReadonlyArray<string>);
+      await bad.link.hold();
+      expect(bad.net.calls).toEqual([...DEFAULT_PROBE_URLS]);
+    }
+  });
+
+  it("stops holding after an hour offline, while still saying Watch is offline", async () => {
+    const { link, net, advance } = setup();
+    net.up = false;
+    expect(await link.hold()).toBe(true);
+    for (let minutes = 20; minutes <= 60; minutes += 20) {
+      advance(20 * 60);
+      expect(await link.hold()).toBe(true);
+    }
+    advance(60);
+    expect(await link.hold()).toBe(false);
+    expect(link.link()).toEqual({ offlineSince: "2026-10-15T10:00:00.000Z", holding: false });
   });
 
   it("knows which checks need the internet", () => {

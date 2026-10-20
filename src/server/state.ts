@@ -70,7 +70,11 @@ export const homeText = (state: WatchState) => {
   ];
   if (state.link.offlineSince !== null)
     lines.unshift(
-      `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. Checks that need it are on hold, and nothing alerts until it is back.`,
+      `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. ${
+        state.link.holding
+          ? "Checks that need it are on hold, and nothing alerts until it is back."
+          : "After an hour offline it records failures again, in case the probe addresses are what is blocked."
+      }`,
     );
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));

@@ -56,7 +56,8 @@ describe("mcp", () => {
 
   it("says first when Watch cannot reach the internet", async () => {
     // Holding on, nothing on the network answers, and one check that needs the internet fails.
-    const watch = testWatch(fakeDeps({}).deps, () => undefined);
+    const fake = fakeDeps({});
+    const watch = testWatch(fake.deps, () => undefined);
     watch.defineCheck(
       { id: "site", serviceId: "s", kind: "http", intent: "x", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" },
       "on",
@@ -67,6 +68,14 @@ describe("mcp", () => {
     expect(text.split("\n")[0]).toBe(
       "Watch cannot reach the internet since 2026-10-15 10:00 UTC. Checks that need it are on hold, and nothing alerts until it is back.",
     );
+    // After an hour offline Watch records failures again, and says so.
+    for (let i = 0; i < 4; i++) {
+      fake.advance(20 * 60);
+      await watch.runner.tick();
+    }
+    const later = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);
+    expect(later.split("\n")[0]).toContain("After an hour offline it records failures again");
+    expect(watch.store.check("site")!.lastOutcome).toBe("fail");
   });
 
   it("makes a one-time sign-in link the page accepts once", async () => {

@@ -28,8 +28,9 @@
       `src/server/app.ts`, `src/server/chat.test.ts`: every failure probes, with answers reused for 15 seconds; the link state
       lives in memory, a pass outranks a probe that began before it, and offline lapses 30 minutes
       after the last failed probe.
-- [ ] 4.3 `src/server/connectivity.ts`, `src/server/config.ts`, `src/server/state.ts`,
-      `src/web/Home.tsx`, `src/server/chat.test.ts`: probe addresses must parse; holding stops
+- [x] 4.3 `src/server/connectivity.ts`, `src/server/config.ts`, `src/server/state.ts`,
+      `src/web/Home.tsx`, `src/web/logic.test.ts`, `src/server/chat.test.ts`,
+      `src/server/connectivity.test.ts`: probe addresses must parse; holding stops
       after an hour offline, and the notice says so.
 
 ## 5. Verification
