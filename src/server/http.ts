@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
+import { useSignInCode } from "./signin.ts";
 import { readState } from "./state.ts";
 
 const MAX_BODY = 64 * 1024;
@@ -112,14 +113,15 @@ export const makeHttpServer = (options: {
     return true;
   };
 
+  // Only one-time codes sign a browser in; a link carrying the access token is never accepted.
   const signin: Route = async (_request, response, url) => {
     if (url.pathname !== "/signin") return false;
-    const token = url.searchParams.get("token") ?? "";
-    if (!sameToken(token, options.config().token)) {
+    if (!useSignInCode(watch.store, url.searchParams.get("code") ?? "", watch.deps.now())) {
       response.writeHead(401, { "content-type": "text/plain" });
-      response.end("This sign-in link is not valid. Run t3-watch url for a new one.");
+      response.end("This sign-in link is not valid, was already used or is older than 10 minutes. Run t3-watch url for a new one.");
       return true;
     }
+    const token = options.config().token;
     const secure = (options.config().publicUrl ?? "").startsWith("https:") ? "; Secure" : "";
     response.writeHead(302, {
       "set-cookie": `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`,

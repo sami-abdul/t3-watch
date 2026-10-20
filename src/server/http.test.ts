@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { WatchConfig } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
+import { makeSignInCode } from "./signin.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
 const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "test-token-123", roots: [], publicUrl: null };
@@ -27,13 +28,16 @@ describe("http", () => {
     expect(ok.status).toBe(200);
   });
 
-  it("signs in with the link and sets a cookie", async () => {
-    const { base } = await serve();
-    const response = await fetch(`${base}/signin?token=test-token-123`, { redirect: "manual" });
+  it("signs in once with a one-time link and sets a cookie", async () => {
+    const { base, watch } = await serve();
+    const code = makeSignInCode(watch.store, watch.deps.now());
+    const response = await fetch(`${base}/signin?code=${code}`, { redirect: "manual" });
     expect(response.status).toBe(302);
     const cookie = response.headers.get("set-cookie")!.split(";")[0]!;
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(200);
-    expect((await fetch(`${base}/signin?token=wrong`)).status).toBe(401);
+    // The same link again, and a link carrying the access token, are refused.
+    expect((await fetch(`${base}/signin?code=${code}`, { redirect: "manual" })).status).toBe(401);
+    expect((await fetch(`${base}/signin?token=test-token-123`, { redirect: "manual" })).status).toBe(401);
   });
 
   it("accepts heartbeats without the token but only for known checks", async () => {

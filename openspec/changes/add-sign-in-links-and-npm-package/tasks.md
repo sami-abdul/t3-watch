@@ -2,7 +2,7 @@
 
 - [x] 1.1 `src/server/store.ts`, `src/server/signin.ts`, `src/server/signin.test.ts`: codes stored
       hashed with a 10-minute expiry and taken once.
-- [ ] 1.2 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/chat.test.ts`: `/signin`
+- [x] 1.2 `src/server/http.ts`, `src/server/http.test.ts`, `src/server/chat.test.ts`: `/signin`
       takes a code once; the token form goes.
 - [ ] 1.3 `src/server/cli.ts`, `src/server/config.ts`, `src/server/config.test.ts`: `url` and
       `install` print a one-time link; `start` points at `t3-watch url`.
