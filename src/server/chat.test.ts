@@ -54,6 +54,16 @@ describe("mcp", () => {
     expect(firstText(home as never)).toBe(summary);
   });
 
+  it("says first when Watch cannot reach the internet", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    watch.store.setKv("link", { offlineSince: "2026-10-15T09:58:00.000Z" });
+    const { client } = await connect(watch);
+    const text = firstText((await client.callTool({ name: "watch_status", arguments: {} })) as never);
+    expect(text.split("\n")[0]).toBe(
+      "Watch cannot reach the internet since 2026-10-15 09:58 UTC. Checks that need it are on hold, and nothing alerts until it is back.",
+    );
+  });
+
   it("makes a one-time sign-in link the page accepts once", async () => {
     const { client, url } = await connect(testWatch(fakeDeps({}).deps));
     expect(client.getInstructions()).toContain("watch_sign_in_link");

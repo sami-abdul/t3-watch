@@ -10,9 +10,9 @@
 
 ## 2. Page and chat
 
-- [ ] 2.1 `src/server/state.ts`, `src/web/Home.tsx`: the state carries the link; Home shows the
+- [x] 2.1 `src/server/state.ts`, `src/web/Home.tsx`, `src/web/logic.test.ts`: the state carries the link; Home shows the
       offline notice.
-- [ ] 2.2 `src/server/state.ts`, `src/server/chat.test.ts`: the text status leads with the offline
+- [x] 2.2 `src/server/state.ts`, `src/server/chat.test.ts`: the text status leads with the offline
       line.
 
 ## 3. Docs

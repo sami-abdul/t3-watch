@@ -78,6 +78,12 @@ export function Home({
           {model.paused.length > 0 ? ` · ${model.paused.length} paused` : ""}
         </Muted>
       </div>
+      {state.link.offlineSince !== null ? (
+        <Muted className="text-foreground">
+          Watch lost its internet connection {ago(state.link.offlineSince, now)}. Checks that need it are on hold, and nothing
+          alerts until it is back.
+        </Muted>
+      ) : null}
       {notice !== null ? <Muted className="text-foreground">{notice}</Muted> : null}
 
       {model.failing.length > 0 ? (

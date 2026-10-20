@@ -40,6 +40,7 @@ export const readState = (watch: Watch) => {
       return { url: a.url, signed: a.secret !== null };
     })(),
     setup: { scan: watch.store.getKv<Scan | null>("scan", null), status: watch.scanner.status() },
+    link: watch.link(),
     vendors: [...watch.vendors().values()].map((v) => ({
       id: v.id,
       label: v.label,
@@ -67,6 +68,10 @@ export const homeText = (state: WatchState) => {
         ? `All clear: ${passing} of ${on.length} checks passing.`
         : `${failing.length} broken, ${passing} passing, ${on.length} on.`,
   ];
+  if (state.link.offlineSince !== null)
+    lines.unshift(
+      `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. Checks that need it are on hold, and nothing alerts until it is back.`,
+    );
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));
   if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
