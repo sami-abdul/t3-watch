@@ -38,9 +38,11 @@ export const homeEnv = (provider: ProviderHome): Record<string, string | undefin
   [HOME_VARIABLE[provider.cli]]: provider.home ?? undefined,
 });
 
-/** T3's settings file: under T3CODE_HOME when set, as T3 itself reads it. */
-export const t3SettingsFile = (env: NodeJS.ProcessEnv = process.env, home = homedir()) =>
-  join(env.T3CODE_HOME?.trim() || join(home, ".t3"), "userdata", "settings.json");
+/** T3 Code's data folder: T3CODE_HOME when set, as T3 itself reads it. */
+export const t3Home = (env: NodeJS.ProcessEnv = process.env, home = homedir()) => env.T3CODE_HOME?.trim() || join(home, ".t3");
+
+/** T3's settings file, in its data folder. */
+export const t3SettingsFile = (env: NodeJS.ProcessEnv = process.env, home = homedir()) => join(t3Home(env, home), "userdata", "settings.json");
 
 /** T3's settings, or null with the reason: T3 is not installed, or its file cannot be read. */
 export const readT3Settings = (file = t3SettingsFile()): { readonly settings: unknown; readonly problem: string | null } => {

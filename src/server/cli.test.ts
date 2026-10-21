@@ -91,8 +91,9 @@ describe("t3-watch install", () => {
     for (const command of ["install", "uninstall"]) {
       const run = spawnSync(process.execPath, [cli, command, "--al"], { encoding: "utf8" });
       expect(run.status).toBe(1);
-      expect(run.stderr).toContain(`t3-watch ${command} takes only --all`);
-      expect(run.stderr).toContain("not --al");
+      expect(run.stderr).toContain(
+        command === "install" ? "t3-watch install takes only --all, --no-tailscale or --no-project, not --al" : "t3-watch uninstall takes only --all, not --al",
+      );
     }
   });
 });

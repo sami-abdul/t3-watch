@@ -54,9 +54,11 @@ reach the page, a log or an agent.
 
 ## The Watch thread
 
-Make a thread in T3 Code, name it Watch, and say "Show me Watch". The agent calls `watch_home`.
-On Codex threads the page appears inline and its buttons work; on other providers you get the same
-state as text.
+`install` adds a project named Watch to T3 Code, in a folder of its own with no code, so a thread
+there starts without any repository's hooks, skills or memory. Start a thread in it and say "Show
+me Watch". The agent calls `watch_home`. On Codex threads the page appears inline and its buttons
+work; on other providers you get the same state as text. `install --no-project` skips the
+project, and `uninstall` leaves it with its threads.
 
 Things to ask:
 

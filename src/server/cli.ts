@@ -9,6 +9,7 @@ import type { WatchConfig } from "./config.ts";
 import { listenHosts, loadConfig, localUrl, pageUrl, saveConfig, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { firstLine, liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
+import { existingWatchProject, makeWatchProject, workspaceFolder } from "./project.ts";
 import { homeEnv, type ProviderHome, providerHomes, readT3Settings, t3SettingsFile } from "./providers.ts";
 import { choosePort, findTailnet, type Refusal, sendsToWatch, servedPorts, serveWatch, tailnetUrl, unserve, watchTarget } from "./tailscale.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
@@ -395,6 +396,14 @@ const answersAt = async (url: string) => {
   return `Tailscale serves ${url}, but it did not answer yet (${reason}). Try it again in a minute.`;
 };
 
+/** What uninstall says about the Watch project and its folder, which are the person's to keep or delete. */
+export const projectStaysLine = (existing: string | null, workspace: string | null, exists: (path: string) => boolean = existsSync) =>
+  existing !== null
+    ? `T3 Code: the Watch project stays, with its threads and its folder, ${existing}. To delete the project and its threads: t3 project remove --force ${shellQuote(existing)}`
+    : workspace !== null && exists(workspace)
+      ? `T3 Code: the Watch folder stays, at ${workspace}.`
+      : null;
+
 /** Writes the login service, launchd on macOS and systemd on Linux, and (re)starts it. */
 const installService = async (config: WatchConfig, home: string, node: string, bin: string) => {
   const env = [`PATH=${process.env.PATH ?? ""}`, ...(process.env.T3_WATCH_HOME ? [`T3_WATCH_HOME=${home}`] : [])];
@@ -449,7 +458,7 @@ WantedBy=default.target
   await runProc("systemctl", ["--user", "restart", SERVICE]);
 };
 
-const install = async (options: { readonly all: boolean; readonly tailscale: boolean }) => {
+const install = async (options: { readonly all: boolean; readonly tailscale: boolean; readonly project: boolean }) => {
   const [node, bin] = binCommand();
   if (!existsSync(join(packageRoot(), "dist", "server", "cli.js")))
     throw new Error("Build first: pnpm build");
@@ -468,7 +477,15 @@ const install = async (options: { readonly all: boolean; readonly tailscale: boo
   }
   // Checking the address overlaps the MCP registrations.
   const answering = tailnet.url === null ? null : answersAt(tailnet.url);
-  for (const line of await registerMcp({ all: options.all })) console.log(line);
+  // Independent of the MCP registrations, so the two run side by side.
+  const project = (options.project ? makeWatchProject(runProc, workspaceFolder(platform())) : Promise.resolve("T3 Code: no Watch project, as --no-project asks.")).catch(
+    (error: unknown) => `T3 Code: could not add the Watch project: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  try {
+    for (const line of await registerMcp({ all: options.all })) console.log(line);
+  } finally {
+    console.log(await project);
+  }
   if (answering !== null) console.log(await answering);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // The link is one-time and short-lived, and never carries the access token, so it is safe to
@@ -495,6 +512,9 @@ const uninstall = async (all: boolean) => {
     const stopped = await stopTailnetPage(loadConfig(home), home);
     if (stopped !== null) console.log(stopped.line);
   }
+  const workspace = workspaceFolder(platform());
+  const stays = projectStaysLine(workspace === null ? null : existingWatchProject(workspace), workspace);
+  if (stays !== null) console.log(stays);
   console.log(`Removed the service. Your data stays in ${watchHome()}.`);
 };
 
@@ -608,6 +628,7 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch install     Run it in the background at login and register it with Codex and Claude Code
                        --all: in every provider home T3 Code runs, too
                        --no-tailscale: keep the page on this machine, off your tailnet
+                       --no-project: no Watch project in T3 Code
   t3-watch uninstall   Undo install, keeping your data; --all for every T3 provider home
   t3-watch url         Print a one-time sign-in link for the page
   t3-watch signout     Sign every browser out of the page; agents keep working
@@ -622,14 +643,16 @@ export const main = async (args: ReadonlyArray<string>) => {
   try {
     if (command === "start") await start();
     else if (command === "install" || command === "uninstall") {
-      const known = command === "install" ? ["--all", "--no-tailscale"] : ["--all"];
+      const known = command === "install" ? ["--all", "--no-tailscale", "--no-project"] : ["--all"];
       const unknown = args.slice(1).filter((arg) => !known.includes(arg));
       if (unknown.length > 0) {
-        console.error(`t3-watch ${command} takes only ${known.join(" and ")}, not ${unknown.join(" ")}`);
+        const list = known.length === 1 ? known[0] : `${known.slice(0, -1).join(", ")} or ${known.at(-1)}`;
+        console.error(`t3-watch ${command} takes only ${list}, not ${unknown.join(" ")}`);
         process.exitCode = 1;
         return;
       }
-      if (command === "install") await install({ all: args.includes("--all"), tailscale: !args.includes("--no-tailscale") });
+      if (command === "install")
+        await install({ all: args.includes("--all"), tailscale: !args.includes("--no-tailscale"), project: !args.includes("--no-project") });
       else await uninstall(args.includes("--all"));
     }
     else if (command === "signout") {
