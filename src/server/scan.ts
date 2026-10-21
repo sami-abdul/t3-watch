@@ -8,7 +8,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import type { WatchCore as Watch } from "./app.ts";
+import { type WatchCore as Watch, WatchError } from "./app.ts";
+import { ALL_READS, type Reads } from "./config.ts";
 import type { Check, KeyRecord } from "./store.ts";
 import type { Vendor } from "./vendors.ts";
 
@@ -224,7 +225,7 @@ export const findRepositories = (roots: ReadonlyArray<string>) => {
   return [...new Set(found)].slice(0, MAX_REPOS);
 };
 
-const readRepositories = async (watch: Watch, roots: ReadonlyArray<string>, step: (s: string) => void): Promise<Findings> => {
+const readRepositories = async (watch: Watch, roots: ReadonlyArray<string>, step: (s: string) => void, envFiles: boolean): Promise<Findings> => {
   const vendors = watch.vendors().values();
   const catalog = [...vendors];
   const findings: Findings = { repositories: [], vendors: new Map(), aws: new Set() };
@@ -252,7 +253,7 @@ const readRepositories = async (watch: Watch, roots: ReadonlyArray<string>, step
           if (usesAws(packages)) findings.aws.add(where);
           for (const vendor of vendorsInPackages(catalog, packages, entry.name !== "package.json"))
             found(vendor, where);
-        } else if (isEnvFile(entry.name)) {
+        } else if (envFiles && isEnvFile(entry.name)) {
           const text = readSmall(file);
           if (text === null) continue;
           const env = parseEnv(text);
@@ -275,6 +276,71 @@ const readRepositories = async (watch: Watch, roots: ReadonlyArray<string>, step
   return findings;
 };
 
+// ---------------------------------------------------------------- what setup may read
+
+/** The folders and logins setup would read, for the person to choose from before a scan. */
+export interface SetupSources {
+  readonly folders: ReadonlyArray<{ readonly path: string; readonly exists: boolean; readonly repositories: number }>;
+  /** Each login, and whether it is on this machine: null when it is turned off, so not looked at. */
+  readonly logins: ReadonlyArray<{ readonly id: keyof Reads; readonly label: string; readonly available: boolean | null; readonly detail: string }>;
+}
+
+/** What the preview says of a login that is turned off. */
+export const TURNED_OFF = "Turned off, so Watch does not look at it.";
+
+/** The AWS CLI's profiles, from the file the CLI itself reads. */
+const awsProfiles = () => parseAwsConfig(readSmall(process.env.AWS_CONFIG_FILE ?? join(homedir(), ".aws", "config")) ?? "");
+
+/**
+ * What each folder holds and which logins are on this machine, looking only at the logins the
+ * choice allows; one the person turned off is not even looked at. Runs nothing that reaches a
+ * network: gh's login is read from its own config.
+ */
+export const readSources = async (watch: Watch, roots: ReadonlyArray<string>, reads: Reads = ALL_READS): Promise<SetupSources> => {
+  const folders = roots.map((path) => {
+    const exists = existsSync(path);
+    return { path, exists, repositories: exists ? findRepositories([path]).length : 0 };
+  });
+  const gh = reads.github ? await watch.deps.run("gh", ["config", "get", "user", "-h", "github.com"], { timeoutMs: 5000 }) : null;
+  const ghUser = gh !== null && gh.code === 0 ? gh.stdout.trim() : "";
+  const profiles = reads.aws ? awsProfiles() : null;
+  return {
+    folders,
+    logins: [
+      {
+        id: "github",
+        label: "GitHub CLI",
+        available: gh === null ? null : ghUser !== "",
+        detail:
+          gh === null
+            ? TURNED_OFF
+            : gh.missing
+              ? "The GitHub CLI is not installed here."
+              : ghUser !== ""
+                ? `Logged in as ${ghUser}. Watch reads each repository's CI with that login.`
+                : "Installed, but gh has no login here. Run gh auth login, then scan.",
+      },
+      {
+        id: "aws",
+        label: "AWS CLI profiles",
+        available: profiles === null ? null : profiles.length > 0,
+        detail:
+          profiles === null
+            ? TURNED_OFF
+            : profiles.length > 0
+              ? `${profiles.length} profile${profiles.length === 1 ? "" : "s"} here. Watch reads each account's identity and metrics.`
+              : "No AWS CLI profiles here.",
+      },
+      {
+        id: "envFiles",
+        label: "Keys in .env files",
+        available: true,
+        detail: "Vendor keys in the .env files of those folders, stored encrypted. Their values never reach the page or an agent.",
+      },
+    ],
+  };
+};
+
 // ---------------------------------------------------------------- the scan
 
 /** Runs a scan. `step` reports what it is doing for the page. */
@@ -282,9 +348,10 @@ export const runScan = async (
   watch: Watch,
   roots: ReadonlyArray<string>,
   step: (text: string) => void,
+  reads: Reads = ALL_READS,
 ): Promise<Scan> => {
   const previous = watch.store.getKv<Scan | null>("scan", null);
-  const findings = await readRepositories(watch, roots, step);
+  const findings = await readRepositories(watch, roots, step, reads.envFiles);
   const services: Array<FoundService> = [];
   const proposed: Array<{ check: Check; title: string; optional: boolean }> = [];
   const define = (
@@ -300,7 +367,7 @@ export const runScan = async (
 
   // GitHub: the machine's gh login reads each repository's Actions.
   const repos = [...new Set(findings.repositories.map((r) => r.github).filter((r): r is string => r !== null))];
-  if (repos.length > 0) {
+  if (repos.length > 0 && reads.github) {
     step("Checking the GitHub login");
     const login = await watch.deps.run("gh", ["api", "user", "--jq", ".login"]);
     const works = login.code === 0;
@@ -341,9 +408,8 @@ export const runScan = async (
   }
 
   // AWS: each CLI profile, grouped by the account it reaches.
-  const configFile = process.env.AWS_CONFIG_FILE ?? join(homedir(), ".aws", "config");
-  const profiles = parseAwsConfig(readSmall(configFile) ?? "");
-  if (profiles.length > 0 || findings.aws.size > 0) {
+  const profiles = reads.aws ? awsProfiles() : [];
+  if (reads.aws && (profiles.length > 0 || findings.aws.size > 0)) {
     step("Trying each AWS profile");
     const results = await Promise.all(
       profiles.map(async (profile) => {
@@ -416,6 +482,12 @@ export const runScan = async (
 
   // Vendors: keys from .env files, keys added on the page, and sign-in vendors.
   const existingKeys = watch.store.allKeys();
+  // A key an earlier scan stored from a .env file stays Watch's until it is removed. A scan that does
+  // not find its file again, with the folder unticked or .env files turned off, still lists it.
+  const storedEnv = existingKeys.filter((k) => k.removedAt === null && k.sourceKey?.startsWith("env:") === true);
+  for (const key of storedEnv)
+    if (!findings.vendors.has(key.vendor) && watch.vendors().has(key.vendor))
+      findings.vendors.set(key.vendor, { foundIn: new Set([`${key.source}, stored by an earlier scan`]), keys: [] });
   for (const [vendorId, entry] of findings.vendors) {
     const vendor = watch.vendors().get(vendorId)!;
     const serviceId = `vendor:${vendor.id}`;
@@ -446,9 +518,18 @@ export const runScan = async (
         } else
           access.push({ accessKey: found.sourceKey, source: found.source, status: "failed", detail: added.summary, account: null, warnings, keyId: null, removable: false });
       }
+      const stored = (key: KeyRecord, accessKey: string, source: string): AccessRow => ({
+        accessKey, source, status: "works", detail: null, account: key.account,
+        warnings: vendor.key!.personal === true ? ["personal_token"] : [], keyId: key.id, removable: true,
+      });
+      const found = new Set(entry.keys.map((k) => k.sourceKey));
+      for (const key of storedEnv.filter((k) => k.vendor === vendor.id && !found.has(k.sourceKey!))) {
+        working ??= key;
+        access.push(stored(key, key.sourceKey!, `${key.source}, stored by an earlier scan`));
+      }
       for (const key of existingKeys.filter((k) => k.vendor === vendor.id && k.removedAt === null && k.sourceKey === null)) {
         working ??= key;
-        access.push({ accessKey: `key:${key.id}`, source: `Added on the page, ending ${key.last4}`, status: "works", detail: null, account: key.account, warnings: vendor.key.personal === true ? ["personal_token"] : [], keyId: key.id, removable: true });
+        access.push(stored(key, `key:${key.id}`, `Added on the page, ending ${key.last4}`));
       }
     }
     const reachable = working !== null;
@@ -560,17 +641,35 @@ export const applyScan = async (
 };
 
 /** Runs one scan at a time in the background and reports its step. */
-export const makeScanner = (watch: Watch, roots: () => ReadonlyArray<string>) => {
+export const NOT_CHOSEN =
+  "Watch has not been told what it may read yet. On the Watch page, choose the folders and logins and press Scan these; watch_sources shows the choice.";
+
+/**
+ * Runs one scan at a time. A new install scans only once the person has chosen what it may
+ * read; one that scanned before the choice existed keeps scanning with everything allowed.
+ */
+export const makeScanner = (
+  watch: Watch,
+  roots: () => ReadonlyArray<string>,
+  reads: () => Reads = () => ALL_READS,
+  chosen: () => boolean = () => true,
+) => {
   let status: ScanStatus = { running: false, step: null, error: null };
   let current: Promise<Scan> | null = null;
   return {
     status: () => status,
     start: () => {
       if (current !== null) return current;
+      if (!chosen() && watch.store.getKv<Scan | null>("scan", null) === null) throw new WatchError(NOT_CHOSEN, 409);
       status = { running: true, step: "Starting", error: null };
-      current = runScan(watch, roots(), (step) => {
-        status = { ...status, step };
-      })
+      current = runScan(
+        watch,
+        roots(),
+        (step) => {
+          status = { ...status, step };
+        },
+        reads(),
+      )
         .then((scan) => {
           status = { running: false, step: null, error: null };
           return scan;

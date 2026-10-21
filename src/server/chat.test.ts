@@ -4,8 +4,12 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { afterEach, describe, expect, it } from "vitest";
 
 import { alertSettings, deliverAlerts, lastAlertDelivery, lastAlertTest, makeAlertSecret, sendTestAlert, setAlerts } from "./alerts.ts";
-import type { Watch } from "./app.ts";
-import type { WatchConfig } from "./config.ts";
+import { makeWatch, type Watch } from "./app.ts";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { loadConfig, readsOf, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft, draftCheck, draftVendor } from "./drafts.ts";
 import { extendServer } from "./extend.ts";
 import { makeHttpServer } from "./http.ts";
@@ -52,7 +56,7 @@ describe("mcp", () => {
     const { client } = await connect(testWatch(fakeDeps({}).deps));
     const home = await client.callTool({ name: "watch_home", arguments: {} });
     const summary = (home.structuredContent as { summary: string }).summary;
-    expect(summary).toBe("Watch is not set up yet. Call watch_scan.");
+    expect(summary).toBe("Watch is not set up yet. Ask the person to open the page, choose what Watch may read and press Scan these.");
     expect(firstText(home as never)).toBe(summary);
   });
 
@@ -463,5 +467,90 @@ describe("test alerts", () => {
     const shown = firstText((await client.callTool({ name: "watch_alerts", arguments: {} })) as never);
     expect(shown).toContain("Last test at 2026-10-15T10:00:00.000Z: The webhook accepted");
     expect(shown).not.toContain("task-capability-123");
+  });
+});
+
+describe("what setup may read", () => {
+  it("is shown with each folder's repositories, and saved only as a full, valid choice", async () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-setup-"));
+    const awsConfig = process.env.AWS_CONFIG_FILE;
+    // This machine's own AWS profiles stay out of the test.
+    process.env.AWS_CONFIG_FILE = join(home, "no-aws-config");
+    try {
+      let current: WatchConfig = { ...config, roots: [home] };
+      saveConfig(current, home);
+      // A new install: no scan yet, and no choice.
+      const watch = makeWatch({
+        home: null,
+        dbFile: ":memory:",
+        deps: fakeDeps({ commands: { gh: { stdout: "octo\n" } } }).deps,
+        roots: () => current.roots,
+        reads: () => readsOf(current),
+        chosen: () => current.reads !== undefined,
+      });
+      watch.defineCheck({ id: "ci", serviceId: "github:a/b", kind: "github", intent: "CI passes", config: { repo: "a/b" }, keyId: null, cadenceSeconds: 600, origin: "user" }, "on");
+      watch.defineCheck({ id: "lambda", serviceId: "aws:1", kind: "aws_metric", intent: "No errors", config: {}, keyId: null, cadenceSeconds: 600, origin: "user" }, "on");
+      const extension = extendServer({ watch, config: () => current, reloadConfig: () => (current = loadConfig(home)), home, root: process.cwd() });
+      const server = makeHttpServer({ watch, config: () => current, webDir: "/nonexistent", extraRoutes: extension.routes });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      closers.push(() => server.close());
+      const url = new URL("/api/setup", `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+      const auth = { authorization: `Bearer ${config.token}`, "content-type": "application/json" };
+      const shown = (await (await fetch(url, { headers: auth })).json()) as { sources: { folders: unknown; logins: Array<{ id: string; available: boolean }> }; choice: unknown };
+      expect(shown.sources.folders).toEqual([{ path: home, exists: true, repositories: 0 }]);
+      expect(shown.sources.logins.map((l) => [l.id, l.available])).toEqual([["github", true], ["aws", false], ["envFiles", true]]);
+      expect(shown.choice).toEqual({ roots: [home], skippedRoots: [], reads: { github: true, aws: true, envFiles: true }, chosen: false });
+      // Before the person has chosen, nothing scans.
+      const scanUrl = new URL("/api/scan", url);
+      expect((await fetch(scanUrl, { method: "POST", headers: auth })).status).toBe(409);
+      // The person chooses on the page itself; the token agents hold is not enough.
+      const page = { cookie: `t3w=${startSession(watch.store, new Date())}`, "sec-fetch-site": "same-origin", "content-type": "application/json" };
+      const save = (body: unknown) => fetch(url, { method: "POST", headers: page, body: JSON.stringify(body) });
+      expect((await fetch(url, { method: "POST", headers: auth, body: JSON.stringify({ roots: [home], reads: { github: true, aws: true, envFiles: true } }) })).status).toBe(403);
+      expect((await save({ roots: ["code"], reads: { github: true, aws: true, envFiles: true } })).status).toBe(400);
+      expect((await save({ roots: [home], reads: { github: true, aws: false } })).status).toBe(400);
+      // One spelling per folder, and an unticked one is kept so the page still lists it.
+      const saved = await save({ roots: [home, `${home}/`, `${home}/x/..`], skippedRoots: ["/srv/old", home], reads: { github: true, aws: false, envFiles: false } });
+      expect(saved.status).toBe(200);
+      // Turning AWS off pauses the check that uses it; GitHub's stays on.
+      expect(await saved.json()).toEqual({
+        choice: { roots: [home], skippedRoots: ["/srv/old"], reads: { github: true, aws: false, envFiles: false }, chosen: true },
+        paused: 1,
+        resumed: 0,
+      });
+      expect(watch.store.check("lambda")!.state).toBe("paused");
+      expect(watch.store.check("ci")!.state).toBe("on");
+      // While AWS is off, its check cannot be turned back on by hand either.
+      await expect(watch.setCheck("lambda", "resume")).rejects.toThrow("turned off in What Watch may read");
+      const file = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+      expect(file.reads).toEqual({ github: true, aws: false, envFiles: false });
+      expect(file.skippedRoots).toEqual(["/srv/old"]);
+      const listed = (await (await fetch(url, { headers: auth })).json()) as { sources: { folders: Array<{ path: string }>; logins: Array<{ id: string; detail: string }> } };
+      expect(listed.sources.folders.map((f) => f.path)).toEqual([home, "/srv/old"]);
+      // A login the person turned off is not even looked at.
+      expect(listed.sources.logins.find((l) => l.id === "aws")).toMatchObject({ available: null, detail: "Turned off, so Watch does not look at it." });
+      // Turned back on, the check the choice paused comes back.
+      const back = await save({ roots: [home], skippedRoots: ["/srv/old"], reads: { github: true, aws: true, envFiles: false } });
+      expect(((await back.json()) as { resumed: number }).resumed).toBe(1);
+      expect(watch.store.check("lambda")!.state).toBe("on");
+      expect((await fetch(scanUrl, { method: "POST", headers: auth })).status).toBe(202);
+    } finally {
+      if (awsConfig === undefined) delete process.env.AWS_CONFIG_FILE;
+      else process.env.AWS_CONFIG_FILE = awsConfig;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("is told to agents by watch_sources", async () => {
+    // A new install whose person has not chosen yet.
+    const { client } = await connect(makeWatch({ home: null, dbFile: ":memory:", deps: fakeDeps({ commands: { gh: { stdout: "gh version 2.81.0\n" } } }).deps, chosen: () => false }));
+    const result = await client.callTool({ name: "watch_sources", arguments: {} });
+    const structured = result.structuredContent as { choice: unknown; sources: { folders: unknown } };
+    expect(structured.choice).toEqual({ roots: [], skippedRoots: [], reads: { github: true, aws: true, envFiles: true }, chosen: false });
+    expect(structured.sources.folders).toEqual([]);
+    // Agents scan only after the person has chosen on the page.
+    const refused = await client.callTool({ name: "watch_scan", arguments: {} });
+    expect(refused.isError).toBe(true);
+    expect(firstText(refused as never)).toContain("has not been told what it may read yet");
   });
 });

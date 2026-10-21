@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { alertHost } from "./alerts.ts";
 import { makeWatch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { listenHosts, loadConfig, localUrl, pageUrl, saveConfig, watchHome } from "./config.ts";
+import { listenHosts, loadConfig, localUrl, pageUrl, readsOf, saveConfig, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { firstLine, liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
 import { existingWatchProject, makeWatchProject, workspaceFolder } from "./project.ts";
@@ -40,6 +40,8 @@ const start = async () => {
     deps: liveDeps,
     roots: () => config.roots,
     probeUrls: () => config.probeUrls,
+    reads: () => readsOf(config),
+    chosen: () => config.reads !== undefined,
   });
   const extension = extendServer({
     watch,

@@ -44,10 +44,14 @@ there is a tailnet address, Watch listens on 127.0.0.1 as well, so `tailscale se
 
 ## First run
 
-Open the page and press **Set up Watch**. It reads the git repositories under `~/Projects` (and
-`~/code`, `~/src`, `~/dev` if they exist), finds the vendors your code uses, tests the `gh` login,
-each AWS CLI profile and any vendor keys in `.env` files, and runs every suggested check once.
-Untick what you don't want and press **Watch these**.
+Open the page. It first shows what Watch may read: the folders it would look in, `~/Projects`
+and any of `~/code`, `~/src` and `~/dev` that exist, each with how many git repositories it
+holds, and three logins: the GitHub CLI, AWS CLI profiles, and vendor keys in `.env` files.
+Untick what Watch should leave alone, add a folder if you like, and press **Scan these**. Watch
+reads only what is ticked: it finds the vendors your code uses, tests the logins you allowed, and
+runs every suggested check once. Untick the checks you don't want and press **Watch these**.
+**Add services** shows the same choice before each later scan, and an agent can read it with
+`watch_sources`.
 
 Watch only reads. Keys it finds are stored encrypted in `~/.t3-watch`, and their values never
 reach the page, a log or an agent.

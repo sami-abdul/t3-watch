@@ -1,9 +1,24 @@
 import type { AlertResult } from "../server/alerts.ts";
 import type { CheckAction } from "../server/app.ts";
+import type { Reads } from "../server/config.ts";
+import type { SetupSources } from "../server/scan.ts";
 import type { Run } from "../server/store.ts";
 import type { WatchState } from "../server/state.ts";
 
 export type { WatchState };
+
+/** The folders and logins setup may read, ticked, and the folders left unticked. */
+export interface SetupChoice {
+  readonly roots: ReadonlyArray<string>;
+  readonly skippedRoots: ReadonlyArray<string>;
+  readonly reads: Reads;
+}
+
+export interface SetupView {
+  readonly sources: SetupSources;
+  /** The saved choice, and whether the person has made one yet. */
+  readonly choice: SetupChoice & { readonly chosen: boolean };
+}
 export type AddKeyResult =
   | { readonly ok: true; readonly summary: string; readonly key: { readonly id: string; readonly account: string | null } }
   | { readonly ok: false; readonly summary: string };
@@ -13,6 +28,10 @@ export interface WatchClient {
   readonly surface: "page" | "chat";
   readonly state: () => Promise<WatchState>;
   readonly scan: () => Promise<void>;
+  /** The folders and logins setup may read, each with what it holds, and the saved choice. */
+  readonly setup: () => Promise<SetupView>;
+  /** Saves what setup may read. Null in a chat, where the choice is shown and changed on the page. */
+  readonly saveChoice: ((choice: SetupChoice) => Promise<{ readonly paused: number; readonly resumed: number }>) | null;
   readonly apply: (input: { turnOn: ReadonlyArray<string>; removeKeys: ReadonlyArray<string> }) => Promise<{ turnedOn: number; failures: ReadonlyArray<{ id: string; message: string }> }>;
   readonly setCheck: (id: string, action: CheckAction, until?: string) => Promise<void>;
   readonly runs: (id: string) => Promise<ReadonlyArray<Run>>;
@@ -51,6 +70,8 @@ export const httpClient: WatchClient = {
   scan: async () => {
     await post("/api/scan");
   },
+  setup: () => request<SetupView>("/api/setup"),
+  saveChoice: (choice) => post<{ paused: number; resumed: number }>("/api/setup", choice),
   apply: (input) => post("/api/apply", input),
   setCheck: async (id, action, until) => {
     await post(`/api/checks/${encodeURIComponent(id)}/${action}`, until === undefined ? {} : { until });

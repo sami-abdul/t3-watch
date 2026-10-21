@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { CheckContext } from "./checks/index.ts";
+import type { Reads } from "./config.ts";
 import { makeConnectivity } from "./connectivity.ts";
 import { openKeyring } from "./keys.ts";
 import type { Deps } from "./proc.ts";
@@ -34,6 +35,10 @@ interface WatchOptions {
   readonly roots?: () => ReadonlyArray<string>;
   /** The probeUrls setting, read on each probe; missing means the default addresses. */
   readonly probeUrls?: () => unknown;
+  /** What setup may read besides the folders, as the person chose it. */
+  readonly reads?: () => Reads;
+  /** Whether the person has chosen what setup may read; a new install scans only after. */
+  readonly chosen?: () => boolean;
 }
 
 const makeCore = (options: WatchOptions) => {
@@ -68,11 +73,19 @@ const makeCore = (options: WatchOptions) => {
     const at = now();
     switch (action) {
       case "on":
-      case "resume":
+      case "resume": {
         if (check.kind === "vendor" && (check.keyId === null || keyring.reveal(check.keyId) === null))
           throw new WatchError("This check needs a key first");
+        // A login the person turned off in What Watch may read stays unused until they turn it on.
+        const login = check.kind === "github" ? "github" : check.kind === "aws_metric" ? "aws" : null;
+        if (login !== null && options.reads?.()[login] === false)
+          throw new WatchError(
+            `This check uses ${login === "github" ? "the GitHub CLI" : "AWS CLI profiles"}, which ${login === "github" ? "is" : "are"} turned off in What Watch may read. Turn ${login === "github" ? "it" : "them"} on there first.`,
+            409,
+          );
         store.setCheckState(id, "on", at, { nextRunAt: null });
         break;
+      }
       case "pause":
         store.setCheckState(id, "paused", at, { nextRunAt: null });
         break;
@@ -181,7 +194,7 @@ export type WatchCore = ReturnType<typeof makeCore>;
 
 export const makeWatch = (options: WatchOptions) => {
   const core = makeCore(options);
-  const scanner = makeScanner(core, options.roots ?? (() => []));
+  const scanner = makeScanner(core, options.roots ?? (() => []), options.reads, options.chosen);
   return {
     ...core,
     scanner,

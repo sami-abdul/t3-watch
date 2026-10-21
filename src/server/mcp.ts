@@ -11,7 +11,9 @@ import { z } from "zod";
 
 import { alertHost, alertSettings, lastAlertDelivery, lastAlertTest, sendTestAlert, setAlerts } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
+import { ALL_READS, type Reads } from "./config.ts";
 import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "./drafts.ts";
+import { readSources } from "./scan.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import { homeText, readState } from "./state.ts";
 
@@ -23,7 +25,7 @@ Roles: the page is for knowing and deciding (turn on, pause, add keys). You are 
 
 - Start with watch_home to show the state (it renders inline where the host supports it) or watch_status for text.
 - Investigate a check with watch_check, then use gh, aws, logs or the repo to find the cause. Leave your conclusion with watch_note so it shows on the page.
-- First setup: watch_scan, show the result, and let the person tick what to keep on the page or answer in words; then watch_apply.
+- First setup: the person chooses on the page what Watch may read, folders and logins, and presses Scan these; watch_sources shows that choice, and watch_scan refuses until it exists. Then show the result of the scan and let the person tick what to keep on the page or answer in words; then watch_apply.
 - New checks: watch_draft_check. It runs once and waits for the person; never assume it is on. New vendors: watch_draft_vendor with a JSON description (see catalog/*.json in the t3-watch repo for the shape); GET-only, https origin.
 - Never ask for, accept or repeat a key or token in chat. Keys are added on the page (Add key).
 - When the person wants to open the page, call watch_sign_in_link and give them the link; it signs one browser in, once, within ${SIGN_IN_MINUTES} minutes. Make one only when they ask. Never read ~/.t3-watch or Watch's access token.
@@ -61,7 +63,15 @@ const appHtml = (root: string) => {
     : "<!doctype html><p>The Watch view is not built. Run pnpm build.</p>";
 };
 
-export const makeMcpServer = (watch: Watch, options: { readonly root: string; readonly pageUrl: () => string }) => {
+export const makeMcpServer = (
+  watch: Watch,
+  options: {
+    readonly root: string;
+    readonly pageUrl: () => string;
+    /** The folders and logins setup may read, as saved, and whether the person has chosen yet. */
+    readonly choice?: () => { readonly roots: ReadonlyArray<string>; readonly skippedRoots: ReadonlyArray<string>; readonly reads: Reads; readonly chosen: boolean };
+  },
+) => {
   const server = new McpServer({ name: "t3-watch", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
   const appOnly = { ui: { visibility: ["app"] } };
@@ -129,7 +139,7 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
     "watch_scan",
     {
       description:
-        "Runs setup: reads the repositories under the configured folders and the logins on this machine, stores working keys, proposes checks and runs each once. Takes about half a minute.",
+        "Runs setup: reads the repositories under the folders and the logins the person allowed on the page (see watch_sources), stores working keys, proposes checks and runs each once. Refuses until the person has chosen. Takes about half a minute.",
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     safely(async () => {
@@ -145,12 +155,27 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
   );
 
   server.registerTool(
+    "watch_sources",
+    {
+      description:
+        "What setup may read: the folders, each with how many repositories it holds, and the logins (the GitHub CLI, AWS CLI profiles, keys in .env files), each with whether it is on this machine and allowed. The person changes this on the page, before a scan.",
+      annotations: readOnly,
+    },
+    safely(async () => {
+      const choice = options.choice?.() ?? { roots: [], skippedRoots: [], reads: ALL_READS, chosen: false };
+      // Unticked folders too, so the choice reads the same here as on the page.
+      const sources = await readSources(watch, [...new Set([...choice.roots, ...choice.skippedRoots])], choice.reads);
+      return text(json({ ...sources, choice }), { sources, choice });
+    }),
+  );
+
+  server.registerTool(
     "watch_start_scan",
     { description: "Starts setup in the background, for the Watch view.", annotations: { readOnlyHint: false, destructiveHint: false }, _meta: appOnly },
-    async () => {
+    safely(async () => {
       void watch.scanner.start().catch(() => {});
       return text("Scanning");
-    },
+    }),
   );
 
   server.registerTool(

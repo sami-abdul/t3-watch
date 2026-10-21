@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { AlertResult } from "../server/alerts.ts";
 import type { Run } from "../server/store.ts";
 import { App } from "./App.tsx";
-import type { WatchClient, WatchState } from "./client.ts";
+import type { SetupView, WatchClient, WatchState } from "./client.ts";
 import "./index.css";
 
 const app = new McpApp({ name: "t3-watch", version: "0.1.0" });
@@ -35,6 +35,9 @@ const mcpClient: WatchClient = {
   scan: async () => {
     await call("watch_start_scan");
   },
+  setup: async () => (await call("watch_sources")).structuredContent as unknown as SetupView,
+  // What Watch may read is chosen on the page, never from a chat.
+  saveChoice: null,
   apply: async (input) => {
     const result = await call("watch_apply", { turnOn: [...input.turnOn], removeKeys: [...input.removeKeys] });
     const first = result.content?.[0];

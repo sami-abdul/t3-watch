@@ -5,7 +5,7 @@ import type { WatchClient, WatchState } from "./client.ts";
 import { Details } from "./Details.tsx";
 import { Home } from "./Home.tsx";
 import { pageView } from "./logic.ts";
-import { Empty, Review, Scanning } from "./Setup.tsx";
+import { Choose, Review, Scanning } from "./Setup.tsx";
 import { Muted } from "./ui.tsx";
 
 /** Watch's whole UI. The page and the chat view differ only in the client they pass. */
@@ -13,6 +13,10 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
   const [state, setState] = useState<WatchState | null>(initial);
   const [error, setError] = useState<string | null>(null);
   const [wantsReview, setWantsReview] = useState(false);
+  // Add services and Scan again show what Watch may read before scanning.
+  const [choosing, setChoosing] = useState(false);
+  // What the last action changed or why it failed; refreshing the state leaves it in place.
+  const [note, setNote] = useState<{ readonly text: string; readonly failed: boolean } | null>(null);
   // Details, and the section it opens on.
   const [details, setDetails] = useState<false | "top" | "alerts">(false);
 
@@ -34,10 +38,26 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
     return () => clearInterval(timer);
   }, [refresh, scanning]);
 
-  const startScan = async () => {
-    setWantsReview(true);
+  const chooseThenScan = () => {
     setDetails(false);
-    await client.scan();
+    setNote(null);
+    setChoosing(true);
+  };
+  // A key added in the review is read at once, with the choice already saved.
+  const rescan = async () => {
+    setWantsReview(true);
+    setNote(null);
+    try {
+      await client.scan();
+    } catch (e) {
+      setNote({ text: e instanceof Error ? e.message : String(e), failed: true });
+    }
+    refresh();
+  };
+  const scanned = (text: string | null) => {
+    setChoosing(false);
+    setWantsReview(true);
+    setNote(text === null ? null : { text, failed: false });
     refresh();
   };
 
@@ -50,7 +70,8 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
   else {
     const view = pageView(state, wantsReview);
     if (view === "scanning") body = <Scanning step={state.setup.status.step} />;
-    else if (view === "empty") body = <Empty client={client} onScan={() => { setWantsReview(true); refresh(); }} />;
+    else if (view === "empty") body = <Choose client={client} firstRun onScan={scanned} onCancel={null} />;
+    else if (choosing) body = <Choose client={client} firstRun={false} onScan={scanned} onCancel={() => setChoosing(false)} />;
     else if (view === "review")
       body = (
         <Review
@@ -62,12 +83,13 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
             setWantsReview(false);
             refresh();
           }}
-          onRescan={startScan}
+          onRescan={rescan}
+          onChoose={chooseThenScan}
         />
       );
     else
       body = (
-        <Home client={client} state={state} refresh={refresh} onAddServices={startScan} onDetails={(focus) => setDetails(focus ?? "top")} />
+        <Home client={client} state={state} refresh={refresh} onAddServices={chooseThenScan} onDetails={(focus) => setDetails(focus ?? "top")} />
       );
   }
 
@@ -76,6 +98,7 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
       <main className={client.surface === "page" ? "mx-auto max-w-3xl px-5 py-10" : "p-4"}>
         {state?.setup.status.error ? <Muted className="mb-4 text-destructive">Setup failed: {state.setup.status.error}</Muted> : null}
         {error !== null && state !== null ? <Muted className="mb-4 text-destructive">{error}</Muted> : null}
+        {note !== null ? <Muted className={note.failed ? "mb-4 text-destructive" : "mb-4"}>{note.text}</Muted> : null}
         {body}
       </main>
     </MotionConfig>

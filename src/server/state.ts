@@ -71,7 +71,7 @@ export const homeText = (state: WatchState) => {
   const lines = [
     on.length === 0
       ? state.setup.scan === null
-        ? "Watch is not set up yet. Call watch_scan."
+        ? "Watch is not set up yet. Ask the person to open the page, choose what Watch may read and press Scan these."
         : "Nothing is watched yet. Review the scan with the person, then call watch_apply."
       : failing.length === 0
         ? `All clear: ${passing} of ${on.length} checks passing.`

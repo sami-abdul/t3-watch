@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import type { Reads } from "../server/config.ts";
 import type { FoundService, Scan } from "../server/scan.ts";
-import type { WatchClient } from "./client.ts";
+import type { SetupView, WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
 import { InputField, InputGroup } from "~/fluid/ui/input-group";
@@ -26,25 +27,177 @@ const accessTone: Record<string, Tone> = {
   removed: { color: "gray", label: "Removed" },
 };
 
-export function Empty({ client, onScan }: { readonly client: WatchClient; readonly onScan: () => void }) {
+/**
+ * What Watch may read: the folders and logins it would read, each a tick, saved before the scan.
+ * In a chat the choice is shown, and changed on the page.
+ */
+export function Choose({
+  client,
+  firstRun,
+  onScan,
+  onCancel,
+}: {
+  readonly client: WatchClient;
+  readonly firstRun: boolean;
+  /** Called once the scan starts, with what the saved choice changed, if anything. */
+  readonly onScan: (note: string | null) => void;
+  readonly onCancel: (() => void) | null;
+}) {
+  const [view, setView] = useState<SetupView | null>(null);
+  const [folders, setFolders] = useState<ReadonlyArray<string>>([]);
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  const [reads, setReads] = useState<Reads | null>(null);
+  const [adding, setAdding] = useState("");
   const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    client.setup().then(
+      (next) => {
+        if (!current) return;
+        setView(next);
+        // The service lists ticked and unticked folders alike, so an unticked one can come back.
+        setFolders(next.sources.folders.map((f) => f.path));
+        setTicked(new Set(next.choice.roots));
+        setReads(next.choice.reads);
+      },
+      (e: unknown) => {
+        if (current) setError(e instanceof Error ? e.message : String(e));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [client]);
+  if (view === null || reads === null)
+    return <Muted className={error === null ? undefined : "text-destructive"}>{error ?? "Looking at what Watch could read…"}</Muted>;
+
+  const editable = client.saveChoice !== null;
+  const known = new Map(view.sources.folders.map((f) => [f.path, f]));
+  const addFolder = () => {
+    const path = adding.trim().replace(/(.)\/+$/, "$1");
+    if (!path.startsWith("/")) {
+      setError("A folder is a full path, such as /home/you/code.");
+      return;
+    }
+    setFolders(folders.includes(path) ? folders : [...folders, path]);
+    setTicked(new Set([...ticked, path]));
+    setAdding("");
+    setError(null);
+  };
+  const scan = async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      const changed =
+        client.saveChoice === null
+          ? null
+          : await client.saveChoice({ roots: folders.filter((f) => ticked.has(f)), skippedRoots: folders.filter((f) => !ticked.has(f)), reads });
+      await client.scan();
+      const plural = (n: number) => `${n} check${n === 1 ? "" : "s"}`;
+      onScan(
+        [
+          changed !== null && changed.paused > 0 ? `Paused ${plural(changed.paused)} that use${changed.paused === 1 ? "s" : ""} a login you turned off.` : null,
+          changed !== null && changed.resumed > 0 ? `Resumed ${plural(changed.resumed)} that use${changed.resumed === 1 ? "s" : ""} a login you turned back on.` : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || null,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStarting(false);
+    }
+  };
+  // Without ticks in a chat, say plainly what Watch leaves alone.
+  const off = (allowed: boolean): Tone | null => (editable || allowed ? null : { color: "gray", label: "Not read" });
+
   return (
-    <div className="space-y-4">
-      <Heading as="h1">Watch keeps an eye on everything you run</Heading>
-      <Muted>
-        Watch reads the projects and logins already on this machine, finds the services you depend on, and suggests
-        checks. It only reads, and keys stay on this machine.
-      </Muted>
-      <Button
-        loading={starting}
-        onClick={async () => {
-          setStarting(true);
-          await client.scan();
-          onScan();
-        }}
-      >
-        Set up Watch
-      </Button>
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <Heading as="h1">{firstRun ? "Watch keeps an eye on everything you run" : "What Watch may read"}</Heading>
+        <Muted>
+          {firstRun
+            ? "First, choose what Watch may read. From what you tick it finds the services you depend on and suggests checks. It only reads, and keys stay on this machine."
+            : "Watch reads only what is ticked. A scan finds new services and suggests checks for them."}
+        </Muted>
+      </div>
+      <Section title="Folders">
+        <RowList
+          label="Folders"
+          rows={folders.map((path) => {
+            const folder = known.get(path);
+            return {
+              key: path,
+              title: path,
+              detail:
+                folder === undefined
+                  ? "Added. Watch looks inside when it scans."
+                  : !folder.exists
+                    ? "Not found on this machine"
+                    : `${folder.repositories} git ${folder.repositories === 1 ? "repository" : "repositories"}`,
+              checked: ticked.has(path),
+              onToggle: editable ? () => setTicked(toggle(ticked, path)) : null,
+              badge: off(ticked.has(path)),
+            };
+          })}
+        />
+        {editable ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-80 max-w-full">
+              <InputGroup size="compact">
+                <InputField index={0} label="Another folder" value={adding} onChange={setAdding} />
+              </InputGroup>
+            </div>
+            <Button size="compact" variant="secondary" disabled={adding.trim() === ""} onClick={addFolder}>
+              Add
+            </Button>
+          </div>
+        ) : null}
+      </Section>
+      <Section title="Logins">
+        <RowList
+          label="Logins"
+          rows={view.sources.logins.map((login) => ({
+            key: login.id,
+            title: login.label,
+            detail: !reads[login.id]
+              ? // Turning GitHub or AWS off pauses the checks that use it; .env keys already stored stay.
+                login.id === "envFiles"
+                ? "Watch opens no .env file. Keys it stored before stay until you remove them in Details."
+                : `${login.available === null ? "Turned off." : login.detail} Checks that use it pause while it is off.`
+              : login.available === null
+                ? "Watch looks for it when it scans."
+                : login.detail,
+            checked: reads[login.id],
+            onToggle: editable ? () => setReads({ ...reads, [login.id]: !reads[login.id] }) : null,
+            badge: off(reads[login.id]),
+          }))}
+        />
+      </Section>
+      {!editable ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Muted className={typeClass("caption")}>What Watch may read is changed on the Watch page.</Muted>
+          {client.openPage !== null ? (
+            <Button size="compact" variant="secondary" onClick={client.openPage}>
+              Open the page
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {error !== null ? <Muted className="text-destructive">{error}</Muted> : null}
+      <div className="flex flex-wrap gap-2">
+        {/* A chat cannot make the first choice, and a new install does not scan without one. */}
+        {editable || view.choice.chosen || !firstRun ? (
+          <Button loading={starting} onClick={scan}>
+            {editable ? "Scan these" : "Scan"}
+          </Button>
+        ) : null}
+        {onCancel !== null ? (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -141,11 +294,15 @@ export function Review({
   scan,
   onApplied,
   onRescan,
+  onChoose,
 }: {
   readonly client: WatchClient;
   readonly scan: Scan;
   readonly onApplied: () => void;
+  /** Scans again at once with the saved choice, as after a key is added. */
   readonly onRescan: () => void;
+  /** Shows what Watch may read before scanning again. */
+  readonly onChoose: () => void;
 }) {
   const [ticks, setTicks] = useState<Ticks>(() => defaultTicks(scan));
   const [applying, setApplying] = useState(false);
@@ -227,7 +384,7 @@ export function Review({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Muted className={typeClass("caption")}>Untick what you don't want. You can change any of it later.</Muted>
         <span className="flex gap-2">
-          <Button variant="ghost" onClick={onRescan}>
+          <Button variant="ghost" onClick={onChoose}>
             Scan again
           </Button>
           <Button

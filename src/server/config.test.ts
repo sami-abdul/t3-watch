@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { listenHosts, loadConfig, localUrl, pageUrl, type WatchConfig } from "./config.ts";
+import { listenHosts, loadConfig, localUrl, pageUrl, readsOf, type WatchConfig } from "./config.ts";
 
 const config = (host: string, publicUrl: string | null = null): WatchConfig => ({
   port: 8460,
@@ -42,6 +42,23 @@ describe("config", () => {
       expect("probeUrls" in (JSON.parse(readFileSync(file, "utf8")) as object)).toBe(false);
       writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [], probeUrls: [] }));
       expect(loadConfig(home).probeUrls).toEqual([]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps what setup may read as booleans, allowing what it does not name", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-config-"));
+    try {
+      const file = join(home, "config.json");
+      writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [], reads: { aws: false, github: "no", extra: true }, skippedRoots: ["/srv/old"] }));
+      const config = loadConfig(home);
+      expect(config.reads).toEqual({ aws: false });
+      expect(config.skippedRoots).toEqual(["/srv/old"]);
+      expect(readsOf(config)).toEqual({ github: true, aws: false, envFiles: true });
+      writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [] }));
+      expect(loadConfig(home).reads).toBeUndefined();
+      expect(readsOf(loadConfig(home))).toEqual({ github: true, aws: true, envFiles: true });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

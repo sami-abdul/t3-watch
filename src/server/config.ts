@@ -5,6 +5,22 @@ import { join } from "node:path";
 
 import { bareHost, isLoopbackHost } from "./hosts.ts";
 
+/** What setup may read besides the folders. */
+export interface Reads {
+  /** The GitHub CLI's login, for each repository's CI. */
+  readonly github: boolean;
+  /** AWS CLI profiles, for each account's identity and metrics. */
+  readonly aws: boolean;
+  /** Vendor keys in .env files in the folders. */
+  readonly envFiles: boolean;
+}
+
+/** The logins setup can read, in the order the page lists them. */
+export const READS = ["github", "aws", "envFiles"] as const;
+
+/** Everything allowed: what an install reads before the person has chosen. */
+export const ALL_READS: Reads = { github: true, aws: true, envFiles: true };
+
 export interface WatchConfig {
   readonly port: number;
   readonly host: string;
@@ -26,7 +42,21 @@ export interface WatchConfig {
   readonly tailnetUrl?: string;
   /** Whether install made the route at tailnetUrl, so it may take it down, or found it there. */
   readonly tailnetRoute?: "made" | "found";
+  /** What setup may read, as the person chose it on the page; a login it does not name is allowed. */
+  readonly reads?: Partial<Reads>;
+  /** Folders the person unticked, kept so the page still lists them. */
+  readonly skippedRoots?: ReadonlyArray<string>;
 }
+
+/** The saved choice in full: anything the person has not ruled out is allowed, as before the choice existed. */
+export const readsOf = (config: WatchConfig): Reads => ({ ...ALL_READS, ...config.reads });
+
+/** The booleans of a stored `reads`, and nothing else. */
+const readsFrom = (value: unknown): Partial<Reads> | null => {
+  if (typeof value !== "object" || value === null) return null;
+  const kept = Object.fromEntries(READS.filter((key) => typeof (value as Record<string, unknown>)[key] === "boolean").map((key) => [key, (value as Record<string, boolean>)[key]]));
+  return Object.keys(kept).length === 0 ? null : (kept as Partial<Reads>);
+};
 
 export const watchHome = () => process.env.T3_WATCH_HOME ?? join(homedir(), ".t3-watch");
 
@@ -42,6 +72,7 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
   const stored = existsSync(file)
     ? (JSON.parse(readFileSync(file, "utf8")) as Partial<WatchConfig>)
     : {};
+  const reads = readsFrom(stored.reads);
   const config: WatchConfig = {
     port: Number(process.env.T3_WATCH_PORT ?? stored.port ?? 8460),
     host: bareHost(process.env.T3_WATCH_HOST ?? stored.host ?? "127.0.0.1"),
@@ -50,6 +81,8 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
     publicUrl: stored.publicUrl ?? null,
     // Kept only when someone set it, so existing config files do not change.
     ...(stored.probeUrls === undefined ? {} : { probeUrls: stored.probeUrls }),
+    ...(reads === null ? {} : { reads }),
+    ...(Array.isArray(stored.skippedRoots) && stored.skippedRoots.every((r) => typeof r === "string") ? { skippedRoots: stored.skippedRoots } : {}),
     ...(typeof stored.tailnetUrl === "string" && (stored.tailnetRoute === "made" || stored.tailnetRoute === "found")
       ? { tailnetUrl: stored.tailnetUrl, tailnetRoute: stored.tailnetRoute }
       : {}),

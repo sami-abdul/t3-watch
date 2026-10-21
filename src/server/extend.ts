@@ -2,10 +2,13 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 
 import { deliverAlerts, makeAlertSecret, sendTestAlert } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
-import { pageUrl, saveConfig, type WatchConfig } from "./config.ts";
+import { resolve } from "node:path";
+
+import { pageUrl, READS, type Reads, readsOf, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft } from "./drafts.ts";
 import { fromPage, hasPageSession, hasToken, type Route, readJson, sendJson } from "./http.ts";
 import { makeMcpServer } from "./mcp.ts";
+import { readSources } from "./scan.ts";
 
 /** Routes and background work that build on the core service: settings, drafts, MCP, alerts. */
 export const extendServer = (options: {
@@ -18,6 +21,19 @@ export const extendServer = (options: {
   const { watch } = options;
   const page = () => pageUrl(options.config());
 
+  const choiceOf = (config: WatchConfig) => ({
+    roots: config.roots,
+    skippedRoots: config.skippedRoots ?? [],
+    reads: readsOf(config),
+    chosen: config.reads !== undefined,
+  });
+  const folders = (value: unknown, name: string) => {
+    if (!Array.isArray(value) || value.some((r) => typeof r !== "string" || !r.startsWith("/")))
+      throw new WatchError(`${name} must be a list of absolute folder paths`);
+    // One spelling per folder: /code/, /code and /x/../code are the same place.
+    return [...new Set((value as Array<string>).map((r) => resolve(r)))];
+  };
+
   const settings: Route = async (request, response, url) => {
     if (url.pathname !== "/api/settings") return false;
     if (request.method === "GET") {
@@ -27,12 +43,55 @@ export const extendServer = (options: {
     }
     if (request.method !== "POST") return false;
     const body = await readJson(request);
-    const roots = body.roots;
-    if (!Array.isArray(roots) || roots.some((r) => typeof r !== "string" || !r.startsWith("/")))
-      throw new WatchError("roots must be a list of absolute folder paths");
-    saveConfig({ ...options.config(), roots: roots as Array<string> }, options.home);
+    saveConfig({ ...options.config(), roots: folders(body.roots, "roots") }, options.home);
     const { token: _, ...rest } = options.reloadConfig();
     sendJson(response, 200, rest);
+    return true;
+  };
+
+  // What setup may read: the folders, ticked or not, with what each holds, and the saved choice.
+  const setup: Route = async (request, response, url) => {
+    if (url.pathname !== "/api/setup") return false;
+    if (request.method === "POST") {
+      // The person chooses on the page: neither the token agents hold nor another site may.
+      if (!hasPageSession(request, watch.store, watch.deps.now()) || !fromPage(request, options.config().publicUrl))
+        throw new WatchError("Choose what Watch may read on the Watch page", 403);
+      const body = await readJson(request);
+      const roots = folders(body.roots, "roots");
+      const skippedRoots = (body.skippedRoots === undefined ? [] : folders(body.skippedRoots, "skippedRoots")).filter((r) => !roots.includes(r));
+      const reads = body.reads as Record<string, unknown> | undefined;
+      if (typeof reads !== "object" || reads === null || !READS.every((key) => typeof reads[key] === "boolean"))
+        throw new WatchError(`reads must say true or false for ${READS.join(", ")}`);
+      // A scan reads the choice when it starts, so one already running would ignore a new one.
+      if (watch.scanner.status().running) throw new WatchError("A scan is running. Change what Watch may read once it finishes.", 409);
+      const chosen = Object.fromEntries(READS.map((key) => [key, reads[key] === true])) as unknown as Reads;
+      const before = readsOf(options.config());
+      saveConfig({ ...options.config(), roots, skippedRoots, reads: chosen }, options.home);
+      options.reloadConfig();
+      // A login turned off stops being used, not only being read for setup: its checks pause, and
+      // come back when it is turned on again. Checks the person paused themselves stay paused.
+      const kindOf = { github: "github", aws: "aws_metric" } as const;
+      const turnedOff = (["github", "aws"] as const).filter((login) => before[login] && !chosen[login]).map((login) => kindOf[login]);
+      const turnedOn = (["github", "aws"] as const).filter((login) => !before[login] && chosen[login]).map((login) => kindOf[login]);
+      const held = new Set(watch.store.getKv<Array<string>>("pausedByChoice", []));
+      const pausing = watch.store.checks().filter((c) => c.state === "on" && (turnedOff as Array<string>).includes(c.kind));
+      for (const check of pausing) {
+        await watch.setCheck(check.id, "pause");
+        held.add(check.id);
+      }
+      const resuming = watch.store.checks().filter((c) => c.state === "paused" && held.has(c.id) && (turnedOn as Array<string>).includes(c.kind));
+      for (const check of resuming) {
+        await watch.setCheck(check.id, "resume");
+        held.delete(check.id);
+      }
+      watch.store.setKv("pausedByChoice", [...held]);
+      sendJson(response, 200, { choice: choiceOf(options.config()), paused: pausing.length, resumed: resuming.length });
+      return true;
+    }
+    if (request.method !== "GET") return false;
+    const config = options.config();
+    const listed = [...new Set([...config.roots, ...(config.skippedRoots ?? [])])];
+    sendJson(response, 200, { sources: await readSources(watch, listed, readsOf(config)), choice: choiceOf(config) });
     return true;
   };
 
@@ -72,7 +131,11 @@ export const extendServer = (options: {
   // Stateless MCP: a fresh server per request, behind the same token as the API.
   const mcp: Route = async (request, response, url) => {
     if (url.pathname !== "/mcp") return false;
-    const server = makeMcpServer(watch, { root: options.root ?? process.cwd(), pageUrl: page });
+    const server = makeMcpServer(watch, {
+      root: options.root ?? process.cwd(),
+      pageUrl: page,
+      choice: () => choiceOf(options.config()),
+    });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     response.on("close", () => {
       void transport.close();
@@ -97,7 +160,7 @@ export const extendServer = (options: {
   let unsubscribe: (() => void) | null = null;
 
   return {
-    routes: [settings, drafts, alertSecret, alertTest, mcp] as ReadonlyArray<Route>,
+    routes: [settings, setup, drafts, alertSecret, alertTest, mcp] as ReadonlyArray<Route>,
     publicRoutes: [] as ReadonlyArray<Route>,
     start: () => {
       unsubscribe = watch.onEvent(send) as () => void;
