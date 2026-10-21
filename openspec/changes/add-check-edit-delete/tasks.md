@@ -25,6 +25,6 @@
 - [x] 3.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 10, 15 and 6; 29 fixed, and 2 declined in whole or in part in
       `.wattson/decisions.md`.
-- [ ] 3.3 In a browser on a scratch Watch: edit a check and see it run with the new settings,
+- [x] 3.3 In a browser on a scratch Watch: edit a check and see it run with the new settings,
       delete one and restore it with its history; the live Watch restarts briefly with its alert
       settings intact and 22 of 22 checks passing.
