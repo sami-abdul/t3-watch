@@ -22,6 +22,6 @@
 - [x] 3.1 Tests, typecheck, build and `openspec validate add-read-scope-step --strict`.
 - [x] 3.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 10 each; 28 fixed, 2 declined in `.wattson/decisions.md`.
-- [ ] 3.3 In a browser on a scratch Watch: the step lists folders and logins, an unticked login is
+- [x] 3.3 In a browser on a scratch Watch: the step lists folders and logins, an unticked login is
       not read, and the review follows; the live Watch restarts briefly with its alert settings
       intact and 22 of 22 checks passing.
