@@ -15,7 +15,7 @@
 - [x] 2.1 Tests, typecheck, build and `openspec validate add-install-tailscale --strict`.
 - [x] 2.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 10 each; 29 fixed, 1 declined in `.wattson/decisions.md`.
-- [ ] 2.3 On Leviathan's real Tailscale, against a scratch Watch: the route is made on a free port,
+- [x] 2.3 On Leviathan's real Tailscale, against a scratch Watch: the route is made on a free port,
       the HTTPS address answers, and the route is stopped again, leaving the other routes as they
       were; the live Watch restarts briefly with its alert settings intact and 22 of 22 checks
       passing.
