@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 import { alertHost } from "./alerts.ts";
 import { makeWatch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
-import { listenHosts, loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
+import { listenHosts, loadConfig, localUrl, pageUrl, saveConfig, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
-import { liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
+import { firstLine, liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
 import { homeEnv, type ProviderHome, providerHomes, readT3Settings, t3SettingsFile } from "./providers.ts";
+import { choosePort, findTailnet, type Refusal, sendsToWatch, servedPorts, serveWatch, tailnetUrl, unserve, watchTarget } from "./tailscale.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import type { WatchState } from "./state.ts";
 import { openStore } from "./store.ts";
@@ -182,7 +183,7 @@ const laterCommand = (provider: ProviderHome, args: ReadonlyArray<string>) =>
 
 /** How a failed run reads: a hang, or what the CLI said, or its exit code. */
 const failureText = (result: ProcResult, hung: string, verb: "add" | "remove") =>
-  result.timedOut ? hung : `could not ${verb} the MCP server: ${result.stderr.trim().split("\n")[0]!.slice(0, 200) || `exit ${result.code}`}`;
+  result.timedOut ? hung : `could not ${verb} the MCP server: ${firstLine(result.stderr) || `exit ${result.code}`}`;
 
 const removedText = (result: ProcResult) =>
   // Codex answers "No MCP server named ... found." with exit 0, so the words come first.
@@ -256,12 +257,146 @@ export const registerMcp = async (options: {
   return lines;
 };
 
-const install = async (all: boolean) => {
-  const [node, bin] = binCommand();
-  if (!existsSync(join(packageRoot(), "dist", "server", "cli.js")))
-    throw new Error("Build first: pnpm build");
-  const home = watchHome();
-  const config = loadConfig(home);
+const STAYS = "so the page stays on this machine";
+
+const refused = (refusal: Refusal) => `Tailscale: ${refusal.problem}, ${STAYS}.${refusal.fix === null ? "" : ` ${refusal.fix}`}`;
+
+const withoutTailnet = ({ tailnetUrl: _url, tailnetRoute: _route, ...rest }: WatchConfig): WatchConfig => rest;
+
+export interface TailnetStep {
+  readonly config: WatchConfig;
+  readonly lines: ReadonlyArray<string>;
+  /** The address to check once the service runs, when install serves the page. */
+  readonly url: string | null;
+  /** Puts the route and config back when the rest of install fails. */
+  readonly undo: (() => Promise<void>) | null;
+}
+
+/**
+ * Serves the page on the tailnet when Tailscale runs here. Config records the address install set
+ * as tailnetUrl, and tailnetRoute says whether install made that route or found it, so only a
+ * route install made is ever taken down. A publicUrl install did not set is the person's and is
+ * left alone without asking Tailscale anything. With `skip`, an earlier install's route comes off.
+ * When Tailscale refuses, links fall back to this machine and the record stays for a later run.
+ */
+export const tailnetPage = async (
+  config: WatchConfig,
+  home: string,
+  options: { readonly run?: RunProc; readonly skip?: boolean } = {},
+): Promise<TailnetStep> => {
+  const run = options.run ?? runProc;
+  const same = (line: string): TailnetStep => ({ config, lines: [line], url: null, undo: null });
+  if (options.skip === true) {
+    if (config.tailnetUrl === undefined) return same(`Tailscale: skipped with --no-tailscale, ${STAYS}.`);
+    // An earlier install served the page; --no-tailscale takes it back off the tailnet.
+    const stopped = (await stopTailnetPage(config, home, run))!;
+    return { config: stopped.config, lines: [`${stopped.line} The page stays on this machine, as --no-tailscale asks.`], url: null, undo: null };
+  }
+  if (config.publicUrl !== null && config.publicUrl !== config.tailnetUrl)
+    return same(`Tailscale: publicUrl is ${config.publicUrl}, and install did not set it, so Watch leaves it. Remove it from config.json to have install serve the page on your tailnet.`);
+  const local = (line: string): TailnetStep => {
+    if (config.publicUrl === null) return same(line);
+    const next = { ...config, publicUrl: null };
+    saveConfig(next, home);
+    return { config: next, lines: [line], url: null, undo: async () => saveConfig(config, home) };
+  };
+  const tailnet = await findTailnet(run);
+  if ("missing" in tailnet) return local(`Tailscale: not installed, ${STAYS}. With Tailscale running, install serves it on your tailnet over HTTPS.`);
+  if ("problem" in tailnet) return local(refused(tailnet));
+  if (!tailnet.https)
+    return local(refused({ problem: "this tailnet has HTTPS certificates off", fix: "Turn them on in the Tailscale admin console, under DNS, then install again." }));
+  const ports = await servedPorts(run, tailnet);
+  if (ports === null) return local(refused({ problem: "Watch could not read what Tailscale serves here", fix: "Check tailscale serve status, then install again." }));
+  const warnings = [...ports]
+    .filter(([, served]) => served.funnel && sendsToWatch(served, config.port))
+    .map(([port]) => `Tailscale: port ${port} sends the page to the public internet through Funnel, which Watch never does. Turn it off with tailscale funnel --https=${port} off.`);
+  // The route recorded before: put back if it is gone, used again while it still serves Watch.
+  const previous = config.tailnetUrl === undefined ? null : URL.parse(config.tailnetUrl);
+  const previousPort =
+    previous !== null && previous.protocol === "https:" && previous.hostname.toLowerCase() === tailnet.dnsName.toLowerCase() ? Number(previous.port || 443) : null;
+  const served = previousPort === null ? undefined : ports.get(previousPort);
+  const choice =
+    previousPort !== null && served === undefined
+      ? { port: previousPort, existing: false, made: true }
+      : previousPort !== null && sendsToWatch(served, config.port) && served!.https && !served!.funnel
+        ? { port: previousPort, existing: true, made: config.tailnetRoute === "made" }
+        : choosePort(ports, config.port);
+  if (choice === null) return local(refused({ problem: `HTTPS ports ${config.port + 1} to ${config.port + 20} are all taken`, fix: null }));
+  if (!choice.existing) {
+    const result = await serveWatch(run, tailnet, choice.port, watchTarget(config.host, config.port));
+    if (!result.ok) return { ...local(refused(result)), lines: [refused(result), ...warnings] };
+  }
+  const url = tailnetUrl(tailnet, choice.port);
+  const next: WatchConfig = { ...config, publicUrl: url, tailnetUrl: url, tailnetRoute: choice.made ? "made" : "found" };
+  saveConfig(next, home);
+  return {
+    config: next,
+    lines: [`Tailscale: ${choice.existing ? "already serving" : "serving"} the page on your tailnet at ${url}`, ...warnings],
+    url,
+    undo: async () => {
+      if (!choice.existing) await unserve(run, tailnet, choice.port);
+      saveConfig(config, home);
+    },
+  };
+};
+
+/**
+ * Takes down the route install made, while it still sends to Watch alone on this machine, and
+ * points links back at the machine. A route install found is left. The record goes once the
+ * route is known gone or not install's, so a run that could not check leaves it for the next.
+ * Null when install recorded nothing.
+ */
+export const stopTailnetPage = async (config: WatchConfig, home: string, run: RunProc = runProc) => {
+  const url = config.tailnetUrl;
+  if (url === undefined) return null;
+  const finish = (line: string, gone: boolean) => {
+    const base = gone ? withoutTailnet(config) : config;
+    const next: WatchConfig = { ...base, publicUrl: config.publicUrl === url ? null : config.publicUrl };
+    saveConfig(next, home);
+    return { config: next, line };
+  };
+  const parsed = URL.parse(url);
+  if (parsed === null || parsed.protocol !== "https:") return finish("Tailscale: the recorded address was not one install writes, so it was cleared.", true);
+  const port = Number(parsed.port || 443);
+  if (config.tailnetRoute !== "made") return finish(`Tailscale: install found the route on port ${port} rather than making it, so it was left.`, true);
+  const tailnet = await findTailnet(run);
+  if (!("dnsName" in tailnet))
+    return finish(`Tailscale: could not check what port ${port} serves, so it was left. If it still serves the page, run tailscale serve --https=${port} off`, false);
+  if (parsed.hostname.toLowerCase() !== tailnet.dnsName.toLowerCase())
+    return finish(`Tailscale: the recorded address names ${parsed.hostname}, not this machine, so its route was left and the record cleared.`, true);
+  const ports = await servedPorts(run, tailnet);
+  if (ports === null)
+    return finish(`Tailscale: could not check what port ${port} serves, so it was left. If it still serves the page, run tailscale serve --https=${port} off`, false);
+  const served = ports.get(port);
+  if (served === undefined) return finish(`Tailscale: was not serving the page on port ${port} any more.`, true);
+  if (!sendsToWatch(served, config.port)) return finish(`Tailscale: port ${port} serves something else now, so it was left as it is.`, true);
+  if (served.others)
+    return finish(`Tailscale: port ${port} serves other paths besides the page, so it was left. Remove the page's / handler there with tailscale serve when you no longer want it.`, false);
+  return (await unserve(run, tailnet, port))
+    ? finish(`Tailscale: stopped serving the page on port ${port}.`, true)
+    : finish(`Tailscale: could not stop serving port ${port}. Run tailscale serve --https=${port} off`, false);
+};
+
+/** Whether the tailnet address answers after the restart; a first certificate can take seconds. */
+const answersAt = async (url: string) => {
+  let reason = "no answer";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      void response.body?.cancel().catch(() => {});
+      // Before sign-in, the page answers 401 with its sign-in note.
+      if (response.status === 401 || response.ok) return `Checked: ${url} answers over HTTPS.`;
+      reason = `HTTP ${response.status}`;
+    } catch (error) {
+      reason = error instanceof Error && error.cause instanceof Error ? error.cause.message : error instanceof Error ? error.message : String(error);
+    }
+  }
+  return `Tailscale serves ${url}, but it did not answer yet (${reason}). Try it again in a minute.`;
+};
+
+/** Writes the login service, launchd on macOS and systemd on Linux, and (re)starts it. */
+const installService = async (config: WatchConfig, home: string, node: string, bin: string) => {
   const env = [`PATH=${process.env.PATH ?? ""}`, ...(process.env.T3_WATCH_HOME ? [`T3_WATCH_HOME=${home}`] : [])];
   if (platform() === "darwin") {
     const file = join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
@@ -288,17 +423,18 @@ const install = async (all: boolean) => {
     await runProc("launchctl", ["bootout", `gui/${uid}`, file]);
     const loaded = await runProc("launchctl", ["bootstrap", `gui/${uid}`, file]);
     if (loaded.code !== 0) throw new Error(`launchctl failed: ${loaded.stderr.trim()}`);
-  } else if (platform() === "linux") {
-    const file = join(homedir(), ".config", "systemd", "user", `${SERVICE}.service`);
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(
-      file,
-      `[Unit]
+    return;
+  }
+  const file = join(homedir(), ".config", "systemd", "user", `${SERVICE}.service`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    `[Unit]
 Description=t3-watch
 After=network-online.target
 
 [Service]
-ExecStart=${systemdQuote(node!, true)} ${systemdQuote(bin!, true)} start
+ExecStart=${systemdQuote(node, true)} ${systemdQuote(bin, true)} start
 ${env.map((e) => `Environment=${systemdQuote(e, false)}`).join("\n")}
 Restart=on-failure
 RestartSec=5
@@ -306,13 +442,34 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 `,
-    );
-    await runProc("systemctl", ["--user", "daemon-reload"]);
-    const enabled = await runProc("systemctl", ["--user", "enable", "--now", SERVICE]);
-    if (enabled.code !== 0) throw new Error(`systemctl failed: ${enabled.stderr.trim()}`);
-    await runProc("systemctl", ["--user", "restart", SERVICE]);
-  } else throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
-  for (const line of await registerMcp({ all })) console.log(line);
+  );
+  await runProc("systemctl", ["--user", "daemon-reload"]);
+  const enabled = await runProc("systemctl", ["--user", "enable", "--now", SERVICE]);
+  if (enabled.code !== 0) throw new Error(`systemctl failed: ${enabled.stderr.trim()}`);
+  await runProc("systemctl", ["--user", "restart", SERVICE]);
+};
+
+const install = async (options: { readonly all: boolean; readonly tailscale: boolean }) => {
+  const [node, bin] = binCommand();
+  if (!existsSync(join(packageRoot(), "dist", "server", "cli.js")))
+    throw new Error("Build first: pnpm build");
+  if (platform() !== "darwin" && platform() !== "linux") throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
+  const home = watchHome();
+  // Before the service starts, so it starts with the tailnet address.
+  const tailnet = await tailnetPage(loadConfig(home), home, { skip: !options.tailscale });
+  const config = tailnet.config;
+  for (const line of tailnet.lines) console.log(line);
+  try {
+    await installService(config, home, node!, bin!);
+  } catch (error) {
+    // Nothing would answer on the route if the service did not install, so it goes too.
+    await tailnet.undo?.();
+    throw error;
+  }
+  // Checking the address overlaps the MCP registrations.
+  const answering = tailnet.url === null ? null : answersAt(tailnet.url);
+  for (const line of await registerMcp({ all: options.all })) console.log(line);
+  if (answering !== null) console.log(await answering);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // The link is one-time and short-lived, and never carries the access token, so it is safe to
   // print even when an agent runs install.
@@ -333,6 +490,11 @@ const uninstall = async (all: boolean) => {
     await runProc("systemctl", ["--user", "daemon-reload"]);
   }
   for (const line of await registerMcp({ all, remove: true })) console.log(line);
+  const home = watchHome();
+  if (holdsWatch(home)) {
+    const stopped = await stopTailnetPage(loadConfig(home), home);
+    if (stopped !== null) console.log(stopped.line);
+  }
   console.log(`Removed the service. Your data stays in ${watchHome()}.`);
 };
 
@@ -445,6 +607,7 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch start       Run the service in the foreground
   t3-watch install     Run it in the background at login and register it with Codex and Claude Code
                        --all: in every provider home T3 Code runs, too
+                       --no-tailscale: keep the page on this machine, off your tailnet
   t3-watch uninstall   Undo install, keeping your data; --all for every T3 provider home
   t3-watch url         Print a one-time sign-in link for the page
   t3-watch signout     Sign every browser out of the page; agents keep working
@@ -459,13 +622,15 @@ export const main = async (args: ReadonlyArray<string>) => {
   try {
     if (command === "start") await start();
     else if (command === "install" || command === "uninstall") {
-      const unknown = args.slice(1).filter((arg) => arg !== "--all");
+      const known = command === "install" ? ["--all", "--no-tailscale"] : ["--all"];
+      const unknown = args.slice(1).filter((arg) => !known.includes(arg));
       if (unknown.length > 0) {
-        console.error(`t3-watch ${command} takes only --all, not ${unknown.join(" ")}`);
+        console.error(`t3-watch ${command} takes only ${known.join(" and ")}, not ${unknown.join(" ")}`);
         process.exitCode = 1;
         return;
       }
-      await (command === "install" ? install : uninstall)(args.includes("--all"));
+      if (command === "install") await install({ all: args.includes("--all"), tailscale: !args.includes("--no-tailscale") });
+      else await uninstall(args.includes("--all"));
     }
     else if (command === "signout") {
       const home = watchHome();

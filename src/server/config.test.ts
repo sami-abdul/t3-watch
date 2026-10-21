@@ -47,6 +47,23 @@ describe("config", () => {
     }
   });
 
+  it("keeps the address install served the page at, and nothing that is not a string", () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-config-"));
+    try {
+      const file = join(home, "config.json");
+      writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [], tailnetUrl: "https://box.ts.net:8461", tailnetRoute: "made" }));
+      expect(loadConfig(home)).toMatchObject({ tailnetUrl: "https://box.ts.net:8461", tailnetRoute: "made" });
+      // Both or neither: an address with no word on who made its route is dropped.
+      for (const odd of [{ tailnetUrl: 8461, tailnetRoute: "made" }, { tailnetUrl: "https://box.ts.net:8461" }, { tailnetUrl: "https://box.ts.net:8461", tailnetRoute: "mine" }]) {
+        writeFileSync(file, JSON.stringify({ host: "127.0.0.1", token: "t", roots: [], ...odd }));
+        expect(loadConfig(home).tailnetUrl).toBeUndefined();
+        expect(loadConfig(home).tailnetRoute).toBeUndefined();
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("also listens on loopback when bound to one other address", () => {
     expect(listenHosts(config("100.64.0.7"))).toEqual(["100.64.0.7", "127.0.0.1"]);
     expect(listenHosts(config("127.0.0.1"))).toEqual(["127.0.0.1"]);

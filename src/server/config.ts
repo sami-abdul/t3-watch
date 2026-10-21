@@ -19,6 +19,13 @@ export interface WatchConfig {
    * Kept as written in config.json and checked where it is used.
    */
   readonly probeUrls?: unknown;
+  /**
+   * The address install served the page at with tailscale serve, the publicUrl it set. Set only
+   * by install, so a route or publicUrl the person made is never taken down.
+   */
+  readonly tailnetUrl?: string;
+  /** Whether install made the route at tailnetUrl, so it may take it down, or found it there. */
+  readonly tailnetRoute?: "made" | "found";
 }
 
 export const watchHome = () => process.env.T3_WATCH_HOME ?? join(homedir(), ".t3-watch");
@@ -43,6 +50,9 @@ export const loadConfig = (home = watchHome()): WatchConfig => {
     publicUrl: stored.publicUrl ?? null,
     // Kept only when someone set it, so existing config files do not change.
     ...(stored.probeUrls === undefined ? {} : { probeUrls: stored.probeUrls }),
+    ...(typeof stored.tailnetUrl === "string" && (stored.tailnetRoute === "made" || stored.tailnetRoute === "found")
+      ? { tailnetUrl: stored.tailnetUrl, tailnetRoute: stored.tailnetRoute }
+      : {}),
   };
   if (JSON.stringify(stored) !== JSON.stringify(config)) saveConfig(config, home);
   return config;

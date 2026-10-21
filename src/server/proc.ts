@@ -8,6 +8,9 @@ export interface ProcResult {
   readonly missing: boolean;
   readonly timedOut: boolean;
 }
+/** The first line of a command's output, short enough to quote. */
+export const firstLine = (text: string) => text.trim().split("\n")[0]!.slice(0, 200);
+
 export type RunProc = (
   command: string,
   args: ReadonlyArray<string>,

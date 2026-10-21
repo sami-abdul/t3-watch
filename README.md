@@ -32,10 +32,15 @@ Watch thread works on any account, and `t3-watch uninstall --all` takes it out o
 To run from a checkout instead, clone this repository, run `pnpm install && pnpm build`, then
 `node bin/t3-watch.js install`.
 
-On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
-page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8461 http://127.0.0.1:8460`)
-and set `publicUrl` in `~/.t3-watch/config.json` to that address. If `host` there is a tailnet
-address, Watch listens on 127.0.0.1 as well, so `tailscale serve` can front it on another port.
+On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out.
+
+If Tailscale runs on the machine, `install` serves the page on your tailnet over HTTPS with
+`tailscale serve`, never `funnel`, on port 8461 or the next free one, and sign-in links point
+there. It opens on your own devices and nowhere else. Tailscale lets only its operator do this:
+if install says so, run `sudo tailscale set --operator=$USER` once and install again.
+`--no-tailscale` keeps the page on this machine, a `publicUrl` you set in
+`~/.t3-watch/config.json` is left as it is, and `uninstall` stops the route install made. If `host`
+there is a tailnet address, Watch listens on 127.0.0.1 as well, so `tailscale serve` can front it.
 
 ## First run
 
