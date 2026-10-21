@@ -14,17 +14,19 @@ own clock without spending model tokens, and wakes your agent only when somethin
 Watch needs Node 24 or newer, on a machine that stays on.
 
 ```sh
-git clone https://github.com/sami-abdul/t3-watch && cd t3-watch
-pnpm install && pnpm build
-node bin/t3-watch.js install
+npm install -g t3-watch
+t3-watch install
 ```
 
 `install` runs Watch in the background at login (systemd on Linux, launchd on macOS), adds its MCP
 server to Codex and Claude Code, and prints a sign-in link for the page. A sign-in link works
 once, within 10 minutes, so a copy left in a terminal, a log or a chat is useless after use. For
-each other browser, `node bin/t3-watch.js url` prints a new one, or ask your Watch thread for the
-page. A browser gets its own session, never the access token agents use, and `t3-watch signout`
-signs every browser out while agents keep working.
+each other browser, `t3-watch url` prints a new one, or ask your Watch thread for the page. A
+browser gets its own session, never the access token agents use, and `t3-watch signout` signs
+every browser out while agents keep working.
+
+To run from a checkout instead, clone this repository, run `pnpm install && pnpm build`, then
+`node bin/t3-watch.js install`.
 
 On Linux, `loginctl enable-linger $USER` keeps it running while you're logged out. To reach the
 page from your phone, put it behind Tailscale (`tailscale serve --bg --https=8461 http://127.0.0.1:8460`)

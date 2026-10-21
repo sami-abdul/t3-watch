@@ -18,7 +18,7 @@
 ## 3. npm package
 
 - [x] 3.1 `package.json`, `.gitignore`: metadata, `prepack`, `prepublishOnly`, `files`.
-- [ ] 3.2 `README.md`: install from npm, after the first publish.
+- [x] 3.2 `README.md`: install from npm, written just before the first publish so the npm page shows it.
 
 ## 4. Review follow-ups
 
