@@ -5,7 +5,9 @@ It sets itself up from the projects and logins already on your machine, runs its
 own clock without spending model tokens, and wakes your agent only when something changes.
 
 - **The page** is for knowing and deciding: what's broken, what's waiting for you, and one-click
-  Turn on, Pause and Add key. Keys are pasted here, never in chat.
+  Turn on, Pause and Add key. Keys are pasted here, never in chat. Details edits a check's name,
+  how often it runs and its settings, and deletes one; a deleted check keeps its history and can
+  be restored.
 - **The chat** is for understanding and authoring. A "Watch" thread in [T3 Code](https://t3.codes)
   (or any MCP client) investigates failures, writes new checks and shows the page inline.
 

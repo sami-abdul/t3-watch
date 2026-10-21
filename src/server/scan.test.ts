@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeWatch } from "./app.ts";
 import type { Reads } from "./config.ts";
+import { deleteCheck, editCheck } from "./edits.ts";
 import { findRepositories, manifestPackages, parseAwsConfig, parseEnv, readSources, type Scan } from "./scan.ts";
 import { fakeDeps, jsonResponse } from "./testkit.ts";
 
@@ -231,6 +232,107 @@ describe("scan", () => {
     // Choices made in review survive the rescan.
     expect(watch.store.check("vendor:pipedrive:key")!.state).toBe("on");
     expect(watch.store.check("vendor:stripe:activity")!.state).toBe("off");
+  });
+
+  it("keeps the person's edits and deletions through a rescan", async () => {
+    const { watch, fake } = makeFixture();
+    await watch.scanner.start();
+    await watch.applyScan({ turnOn: ["github:acme/api:ci", "aws:123456789012:lambda-errors"], removeKeys: [] });
+    editCheck(watch, "github:acme/api:ci", {
+      intent: "Release CI passes",
+      cadenceMinutes: 30,
+      config: { repo: "acme/api", branch: "release" },
+      updatedAt: watch.store.check("github:acme/api:ci")!.updatedAt,
+    });
+    deleteCheck(watch, "aws:123456789012:lambda-errors");
+    const before = fake.calls.length;
+    const again = await watch.scanner.start();
+    const after = fake.calls.slice(before);
+    expect(watch.store.check("github:acme/api:ci")).toMatchObject({
+      intent: "Release CI passes",
+      cadenceSeconds: 1800,
+      config: { repo: "acme/api", branch: "release" },
+      origin: "user",
+      state: "on",
+    });
+    // Still suggested, under its new name, and its one run used the person's branch.
+    expect(again.suggestions.find((s) => s.checkId === "github:acme/api:ci")?.intent).toBe("Release CI passes");
+    expect(after.some((c) => c.command === "gh" && c.args[0] === "run" && c.args.includes("release"))).toBe(true);
+    // The deleted check is not defined again, run or suggested.
+    expect(watch.store.check("aws:123456789012:lambda-errors")!.state).toBe("deleted");
+    expect(again.suggestions.map((s) => s.checkId)).not.toContain("aws:123456789012:lambda-errors");
+    expect(after.some((c) => c.command === "aws" && c.args[0] === "cloudwatch")).toBe(false);
+  });
+
+  it("leaves a check an agent drafted under the scan's own id as the agent wrote it", async () => {
+    const { watch } = makeFixture();
+    await watch.scanner.start();
+    const drafted = {
+      id: "aws:123456789012:lambda-errors",
+      serviceId: "aws:123456789012",
+      kind: "aws_metric" as const,
+      intent: "Billing Lambda errors",
+      config: { profile: "prod", region: "eu-west-1", namespace: "AWS/Lambda", metric: "Errors", statistic: "Sum", periodSeconds: 300, windowSeconds: 300, comparison: ">", threshold: 5 },
+      keyId: null,
+      cadenceSeconds: 300,
+    };
+    watch.store.upsertCheck({ ...watch.store.check(drafted.id)!, ...drafted, origin: "agent", state: "on" });
+    await watch.scanner.start();
+    expect(watch.store.check(drafted.id)).toMatchObject({ ...drafted, origin: "agent", state: "on" });
+  });
+
+  it("moves a check the person edited onto the key the scan now uses, and nothing else", async () => {
+    const { watch } = makeFixture();
+    await watch.scanner.start();
+    await watch.applyScan({ turnOn: ["vendor:pipedrive:key"], removeKeys: [] });
+    const id = "vendor:pipedrive:key";
+    editCheck(watch, id, { intent: "Pipedrive key still works", cadenceMinutes: 120, updatedAt: watch.store.check(id)!.updatedAt });
+    const old = watch.store.check(id)!.keyId!;
+    const added = await watch.addKey({ vendor: "pipedrive", value: "pd-key-0987654321" });
+    if (!added.ok) throw new Error(added.summary);
+    watch.removeKey(old);
+    await watch.scanner.start();
+    expect(watch.store.check(id)).toMatchObject({ keyId: added.key.id, intent: "Pipedrive key still works", cadenceSeconds: 7200, origin: "user" });
+  });
+
+  it("never moves an agent's check onto another vendor's key", async () => {
+    const { watch } = makeFixture();
+    await watch.scanner.start();
+    const pipedrive = watch.keys().find((k) => k.vendor === "pipedrive")!.id;
+    // An agent drafted a Pipedrive check that happens to take the id of the scan's Stripe check.
+    watch.store.upsertCheck({ ...watch.store.check("vendor:stripe:key")!, config: { vendor: "pipedrive", check: "key" }, keyId: pipedrive, origin: "agent", state: "on" });
+    await watch.scanner.start();
+    expect(watch.store.check("vendor:stripe:key")).toMatchObject({ config: { vendor: "pipedrive", check: "key" }, keyId: pipedrive, origin: "agent" });
+  });
+
+  it("names a deleted check it was asked to turn on, and leaves it deleted", async () => {
+    const { watch } = makeFixture();
+    await watch.scanner.start();
+    deleteCheck(watch, "github:acme/api:ci");
+    // A rescan leaves it out of the scan, and apply still names it.
+    await watch.scanner.start();
+    const result = await watch.applyScan({ turnOn: ["github:acme/api:ci", "vendor:pipedrive:key"], removeKeys: [] });
+    expect(result.failures).toEqual([{ id: "github:acme/api:ci", message: "CI on main is passing was deleted on the page. Restore it in Details first." }]);
+    expect(watch.store.check("github:acme/api:ci")!.state).toBe("deleted");
+    expect(watch.store.check("vendor:pipedrive:key")!.state).toBe("on");
+  });
+
+  it("does not run a check the person deletes while the scan runs", async () => {
+    const { watch, fake } = makeFixture();
+    await watch.scanner.start();
+    await watch.applyScan({ turnOn: ["github:acme/api:ci"], removeKeys: [] });
+    // AWS is read after GitHub's checks are proposed and before any is run, so this deletes one in between.
+    const run = fake.deps.run;
+    Object.assign(fake.deps, {
+      run: (async (command, args, options) => {
+        if (command === "aws" && args[0] === "sts" && watch.store.check("github:acme/api:ci")!.state !== "deleted") deleteCheck(watch, "github:acme/api:ci");
+        return run(command, args, options);
+      }) satisfies typeof run,
+    });
+    const before = fake.calls.length;
+    const again = await watch.scanner.start();
+    expect(fake.calls.slice(before).some((c) => c.command === "gh" && c.args[0] === "run")).toBe(false);
+    expect(again.suggestions.map((s) => s.checkId)).not.toContain("github:acme/api:ci");
   });
 
   it("pauses a running check whose key the review removes", async () => {

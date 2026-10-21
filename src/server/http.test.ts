@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { WatchConfig } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
-import { makeSignInCode } from "./signin.ts";
+import { makeSignInCode, startSession } from "./signin.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
 const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "test-token-123", roots: [], publicUrl: null };
@@ -115,5 +115,36 @@ describe("http", () => {
     expect((await fetch(`${base}/hb/abcdefghijklmnop1234`, { method: "POST" })).status).toBe(200);
     expect(watch.store.lastHeartbeat("h", "success")).not.toBeNull();
     expect((await fetch(`${base}/hb/zzzzzzzzzzzzzzzzzzzz`)).status).toBe(404);
+  });
+
+  it("edits, deletes and restores checks for a browser on the page only", async () => {
+    const { base, watch } = await serve();
+    watch.defineCheck(
+      { id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      "on",
+    );
+    const cookie = `t3w=${startSession(watch.store, watch.deps.now())}`;
+    const post = (action: string, headers: Record<string, string>, body: unknown = {}) =>
+      fetch(`${base}/api/checks/h/${action}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+    const page = { cookie, "sec-fetch-site": "same-origin" };
+    // Neither the token agents hold nor a page on another site may change a check.
+    expect((await post("delete", { authorization: "Bearer test-token-123" })).status).toBe(403);
+    expect((await post("delete", { cookie, "sec-fetch-site": "same-site" })).status).toBe(403);
+    expect((await post("delete", { cookie, origin: "https://elsewhere.example" })).status).toBe(403);
+    expect(watch.store.check("h")!.state).toBe("on");
+    const edited = await post("edit", page, { intent: "Nightly backup pings", cadenceMinutes: 10, config: { periodSeconds: 7200 }, updatedAt: watch.store.check("h")!.updatedAt });
+    expect(edited.status).toBe(200);
+    expect(((await edited.json()) as { check: { intent: string } }).check.intent).toBe("Nightly backup pings");
+    const refused = await post("edit", page, { intent: "Nightly backup pings", cadenceMinutes: 10, config: { period: 7200 }, updatedAt: watch.store.check("h")!.updatedAt });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toBe("period is not a setting of a heartbeat check. It has periodSeconds, graceSeconds.");
+    // A deleted heartbeat's ping address stops answering until it is restored.
+    expect((await post("delete", page)).status).toBe(200);
+    expect((await fetch(`${base}/hb/abcdefghijklmnop1234`)).status).toBe(404);
+    expect((await post("edit", page, { intent: "x", cadenceMinutes: 10 })).status).toBe(409);
+    expect((await post("restore", page)).status).toBe(200);
+    expect(watch.store.check("h")!.state).toBe("paused");
+    expect((await fetch(`${base}/hb/abcdefghijklmnop1234`)).status).toBe(200);
+    expect((await fetch(`${base}/api/checks/nope/delete`, { method: "POST", headers: page })).status).toBe(404);
   });
 });

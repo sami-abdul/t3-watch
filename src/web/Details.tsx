@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 
 import type { Run } from "../server/store.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import type { WatchClient } from "./client.ts";
+import type { CheckEditInput, WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
 import { cn } from "~/lib/utils";
 import { AlertsPanel } from "./Alerts.tsx";
-import { ago } from "./logic.ts";
+import { ago, canDelete, canEdit, type EditForm, editFormOf, editOf, joinParts } from "./logic.ts";
 import { Heading, Muted, outcomeTone, RowList, Section, type Tone } from "./ui.tsx";
 
 const stateTone: Record<string, Tone> = {
@@ -39,6 +39,85 @@ function Runs({ client, check }: { readonly client: WatchClient; readonly check:
   );
 }
 
+/** Edit for one check: its name, how often it runs and its settings. Watch says what it refuses. */
+function EditPanel({
+  check,
+  onSave,
+  onCancel,
+}: {
+  readonly check: CheckView;
+  readonly onSave: (edit: CheckEditInput) => Promise<void>;
+  readonly onCancel: () => void;
+}) {
+  // Taken once, so a refresh while the person types leaves what they typed.
+  const [form, setForm] = useState<EditForm>(() => editFormOf(check));
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    const parsed = editOf(form);
+    if ("error" in parsed) {
+      setError(parsed.error);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(parsed.edit);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const field = cn("w-full rounded-lg border border-border bg-transparent px-3 py-2 text-foreground", typeClass("body"));
+  const label = cn("block text-muted-foreground", typeClass("caption"));
+  return (
+    <div className="space-y-3 rounded-xl border border-border p-4">
+      <div className="space-y-0.5">
+        <span className={cn("block text-foreground", typeClass("body"))}>
+          {check.serviceLabel}: {check.intent}
+        </span>
+        <Muted className={typeClass("caption")}>{joinParts(check.target, check.cadence)}</Muted>
+      </div>
+      <label className="block space-y-1">
+        <span className={label}>Name</span>
+        <input className={field} value={form.intent} onChange={(e) => setForm({ ...form, intent: e.target.value })} />
+      </label>
+      <label className="block space-y-1">
+        <span className={label}>Runs every, in minutes</span>
+        <input className={cn(field, "max-w-40")} inputMode="numeric" value={form.minutes} onChange={(e) => setForm({ ...form, minutes: e.target.value })} />
+      </label>
+      {form.settings !== null ? (
+        <label className="block space-y-1">
+          <span className={label}>Settings, as JSON</span>
+          <textarea
+            className={cn(field, "font-mono", typeClass("caption"))}
+            rows={Math.min(14, form.settings.split("\n").length + 1)}
+            spellCheck={false}
+            value={form.settings}
+            onChange={(e) => setForm({ ...form, settings: e.target.value })}
+          />
+        </label>
+      ) : (
+        <Muted className={typeClass("caption")}>
+          {check.kind === "vendor" ? "Its settings come from its vendor's description" : "This version of Watch cannot change this kind of check's settings"}, so
+          only its name and how often it runs change here.
+        </Muted>
+      )}
+      {check.kind === "heartbeat" ? <Muted className={typeClass("caption")}>Its ping address stays the same.</Muted> : null}
+      {error !== null ? <Muted className="text-destructive">{error}</Muted> : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button loading={saving} onClick={() => void save()}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Details({
   client,
   state,
@@ -48,7 +127,8 @@ export function Details({
 }: {
   readonly client: WatchClient;
   readonly state: WatchState;
-  readonly refresh: () => void;
+  /** Reads the state again; the promise settles once the new state is in. */
+  readonly refresh: () => void | Promise<void>;
   readonly onBack: () => void;
   /** A section to scroll to when Details opens, such as Alerts from Home's notice. */
   readonly focus?: "alerts" | null;
@@ -90,8 +170,38 @@ export function Details({
       refresh();
     }
   };
+  // One check at a time is edited, or asked about before it is deleted.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const editingCheck = editing === null || client.editCheck === null ? null : (state.checks.find((c) => c.id === editing && canEdit(c)) ?? null);
+  // A check deleted or turned into something else meanwhile closes its form, or its question.
+  const deletable = deleting !== null && state.checks.some((c) => c.id === deleting && canDelete(c));
+  useEffect(() => {
+    if (editing !== null && editingCheck === null) setEditing(null);
+    if (deleting !== null && !deletable) setDeleting(null);
+  }, [editing, editingCheck, deleting, deletable]);
   const actions = (check: CheckView) => {
     const snoozed = check.snoozedUntil !== null && Date.parse(check.snoozedUntil) > now.getTime();
+    if (deleting === check.id && client.deleteCheck !== null)
+      return (
+        <>
+          <Button size="compact" variant="ghost" onClick={() => setDeleting(null)}>
+            Cancel
+          </Button>
+          <Button
+            size="compact"
+            variant="secondary"
+            onClick={() =>
+              act(async () => {
+                await client.deleteCheck!(check.id);
+                setDeleting(null);
+              })
+            }
+          >
+            Delete it
+          </Button>
+        </>
+      );
     return (
       <>
         <Runs client={client} check={check} />
@@ -113,11 +223,29 @@ export function Details({
         <Button size="compact" variant="ghost" onClick={() => act(() => client.setCheck(check.id, "run"))}>
           Run now
         </Button>
+        {client.editCheck !== null && canEdit(check) ? (
+          <Button
+            size="compact"
+            variant="ghost"
+            onClick={() => {
+              setDeleting(null);
+              setEditing(check.id);
+            }}
+          >
+            Edit
+          </Button>
+        ) : null}
+        {client.deleteCheck !== null && canDelete(check) ? (
+          <Button size="compact" variant="ghost" onClick={() => setDeleting(check.id)}>
+            Delete
+          </Button>
+        ) : null}
       </>
     );
   };
   const order = ["on", "draft", "paused", "proposed", "off"];
-  const checks = state.checks.toSorted((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
+  const checks = state.checks.filter((c) => c.state !== "deleted").toSorted((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
+  const deleted = state.checks.filter((c) => c.state === "deleted").toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return (
     <div className="space-y-6">
@@ -129,28 +257,70 @@ export function Details({
       </div>
       {error !== null ? <Muted className="text-destructive">{error}</Muted> : null}
 
-      <Section title={`Checks (${checks.length})`}>
-        <RowList
-          label="Checks"
-          rows={checks.map((check) => {
-            const snoozed = check.snoozedUntil !== null && Date.parse(check.snoozedUntil) > now.getTime();
-            return {
+      <Section title={editingCheck !== null ? "Edit check" : `Checks (${checks.length})`}>
+        {editingCheck !== null ? (
+          <EditPanel
+            key={editingCheck.id}
+            check={editingCheck}
+            onCancel={() => setEditing(null)}
+            onSave={async (edit) => {
+              await client.editCheck!(editingCheck.id, edit);
+              // The list it returns to shows the edit, so Edit opened again starts from it.
+              await refresh();
+              setEditing(null);
+            }}
+          />
+        ) : (
+          <RowList
+            label="Checks"
+            rows={checks.map((check) => {
+              const snoozed = check.snoozedUntil !== null && Date.parse(check.snoozedUntil) > now.getTime();
+              return {
+                key: check.id,
+                title: `${check.serviceLabel}: ${check.intent}`,
+                detail:
+                  deleting === check.id
+                    ? "Delete this check? It stops running and leaves Home. Its runs and changes stay, and Restore under Deleted checks brings it back."
+                    : joinParts(
+                        snoozed ? `Snoozed until ${new Date(check.snoozedUntil!).toLocaleString()}` : null,
+                        check.target,
+                        check.cadence,
+                        check.lastSummary === null ? "Not run yet" : `${check.lastSummary} · ${ago(check.lastRunAt, now)}`,
+                        check.pingPath === null ? null : `Ping ${location.origin}${check.pingPath} from the job (add ?status=fail on failure)`,
+                      ),
+                badge: stateTone[check.state] ?? null,
+                action: actions(check),
+              };
+            })}
+          />
+        )}
+      </Section>
+
+      {deleted.length > 0 ? (
+        <Section title={`Deleted checks (${deleted.length})`}>
+          <Muted className={typeClass("caption")}>
+            These no longer run. Each keeps its history{client.restoreCheck !== null ? ", and Restore brings it back paused" : ""}.
+          </Muted>
+          <RowList
+            label="Deleted checks"
+            rows={deleted.map((check) => ({
               key: check.id,
               title: `${check.serviceLabel}: ${check.intent}`,
-              detail: [
-                snoozed ? `Snoozed until ${new Date(check.snoozedUntil!).toLocaleString()}` : null,
-                `${check.target} · ${check.cadence}`,
-                check.lastSummary === null ? "Not run yet" : `${check.lastSummary} · ${ago(check.lastRunAt, now)}`,
-                check.pingPath === null ? null : `Ping ${location.origin}${check.pingPath} from the job (add ?status=fail on failure)`,
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              badge: stateTone[check.state] ?? null,
-              action: actions(check),
-            };
-          })}
-        />
-      </Section>
+              detail: joinParts(`Deleted ${ago(check.updatedAt, now)}`, check.target, check.lastSummary === null ? "Never ran" : `Last: ${check.lastSummary}`),
+              action: (
+                <>
+                  <Runs client={client} check={check} />
+                  {client.restoreCheck !== null ? (
+                    <Button size="compact" variant="secondary" onClick={() => act(() => client.restoreCheck!(check.id))}>
+                      Restore
+                    </Button>
+                  ) : null}
+                </>
+              ),
+            }))}
+          />
+        </Section>
+      ) : null}
 
       <Section title={`Keys (${state.keys.length})`}>
         {state.keys.length === 0 ? (

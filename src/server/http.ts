@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
+import { deleteCheck, editCheck, restoreCheck } from "./edits.ts";
 import { isLiveSignInCode, isSession, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
 import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
@@ -40,6 +41,11 @@ export const hasPageSession = (request: IncomingMessage, store: Store, now: Date
     .find(([name]) => name === COOKIE);
   // Session ids are URL-safe base64, so the value is compared as sent; nothing to decode.
   return cookie?.[1] !== undefined && isSession(store, cookie[1], now);
+};
+
+/** Refuses all but a signed-in browser on the page itself: the person's own decisions, not an agent's or another site's. */
+export const requirePage = (request: IncomingMessage, store: Store, now: Date, publicUrl: string | null, message: string) => {
+  if (!hasPageSession(request, store, now) || !fromPage(request, publicUrl)) throw new WatchError(message, 403);
 };
 
 /** The access token agents and the CLI send as a bearer token. */
@@ -138,7 +144,8 @@ export const makeHttpServer = (options: {
     if (match === null || (request.method !== "GET" && request.method !== "POST")) return false;
     const check = watch.store
       .checks()
-      .find((c) => c.kind === "heartbeat" && c.config.token === match[1]);
+      // A deleted check's ping address stops answering until it is restored.
+      .find((c) => c.kind === "heartbeat" && c.state !== "deleted" && c.config.token === match[1]);
     if (check === undefined) {
       sendJson(response, 404, { error: "Unknown heartbeat" });
       return true;
@@ -210,6 +217,16 @@ export const makeHttpServer = (options: {
         checkAction[2] as CheckAction,
         typeof body.until === "string" ? body.until : undefined,
       );
+      sendJson(response, 200, { check });
+      return true;
+    }
+    const change = /^\/api\/checks\/([^/]+)\/(edit|delete|restore)$/.exec(path);
+    if (change !== null && method === "POST") {
+      // The person changes checks on the page: neither the token agents hold nor another site may.
+      requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Edit and delete checks on the Watch page");
+      const id = decodeURIComponent(change[1]!);
+      const check =
+        change[2] === "edit" ? editCheck(watch, id, await readJson(request)) : change[2] === "delete" ? deleteCheck(watch, id) : restoreCheck(watch, id);
       sendJson(response, 200, { check });
       return true;
     }

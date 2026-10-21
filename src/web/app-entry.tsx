@@ -50,6 +50,10 @@ const mcpClient: WatchClient = {
   draft: async (id, action, kind) => {
     await call("watch_decide_draft", { id, kind, decision: action });
   },
+  // Checks are edited, deleted and restored by the person on the page, never from a chat.
+  editCheck: null,
+  deleteCheck: null,
+  restoreCheck: null,
   // Keys are never typed into a chat surface: Add key opens the page instead.
   addKey: null,
   removeKey: null,

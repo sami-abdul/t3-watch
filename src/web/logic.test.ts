@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import { accessRows, alertSteps, alertsNotice, applyChanges, isNewCheck, latestAlertResult, needsHandover, newChecksToReview, productGroups, productsOf, productSummary, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
+import { accessRows, alertSteps, alertsNotice, applyChanges, canDelete, canEdit, editFormOf, editOf, isNewCheck, latestAlertResult, needsHandover, newChecksToReview, productGroups, productsOf, productSummary, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
@@ -64,6 +64,10 @@ describe("review", () => {
     expect(groups.quiet.map((s) => s.label)).toEqual(["acme/docs"]);
     expect(groups.unreachable.map((s) => s.label)).toEqual(["Xero"]);
     expect(accessRows(groups.ready).map((r) => r.service)).toEqual(["Stripe", "GitHub"]);
+    // A repository whose check the person deleted has runs: it is not quiet, and its login still shows.
+    const deleted = reviewGroups({ ...scan, suggestions: scan.suggestions.filter((s) => s.serviceId !== "github:acme/api") });
+    expect(deleted.quiet.map((s) => s.label)).toEqual(["acme/docs"]);
+    expect(accessRows(deleted.ready).map((r) => r.service)).toEqual(["Stripe", "GitHub"]);
   });
 });
 
@@ -267,5 +271,47 @@ describe("review ticks", () => {
     const now = { ...scan, suggestions: [{ ...first!, suggested: true, state: "paused" as const }, { ...second!, suggested: false, state: "on" as const }] };
     // Paused since the scan: unticked. Turned on since: ticked.
     expect([...defaultTicks(now).checks]).toEqual([second!.checkId]);
+  });
+});
+
+describe("Edit and Delete", () => {
+  it("offer Edit on checks that are on or paused, and Delete on all but drafts", () => {
+    expect((["on", "paused", "proposed", "off", "draft", "deleted"] as const).map((state) => [canEdit({ state }), canDelete({ state })])).toEqual([
+      [true, true],
+      [true, true],
+      [false, true],
+      [false, true],
+      [false, false],
+      [false, false],
+    ]);
+  });
+
+  it("start from the check as it stands, with a heartbeat's token and a vendor check's settings left out", () => {
+    const site = check({ intent: "Site answers", cadenceSeconds: 900, kind: "http", config: { url: "https://shop.example/", contains: "Welcome" }, updatedAt: "2026-10-15T09:00:00Z" });
+    expect(editFormOf(site)).toEqual({
+      intent: "Site answers",
+      minutes: "15",
+      settings: '{\n  "url": "https://shop.example/",\n  "contains": "Welcome"\n}',
+      updatedAt: "2026-10-15T09:00:00Z",
+    });
+    // A cadence that is not whole minutes shows as it is, and goes back unchanged.
+    expect(editFormOf(check({ cadenceSeconds: 90 })).minutes).toBe("1.5");
+    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300, config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 } }));
+    expect(ping.settings).not.toContain("abcdefghijklmnop1234");
+    expect(JSON.parse(ping.settings!)).toEqual({ periodSeconds: 3600 });
+    expect(editFormOf(check({ kind: "vendor", config: { vendor: "stripe", check: "key" } })).settings).toBeNull();
+    // A kind from another build of Watch keeps its settings out of the form, so a rename still saves.
+    expect(editFormOf(check({ kind: "dns" as never, config: { name: "shop.example" } })).settings).toBeNull();
+  });
+
+  it("send what was typed, and stop only at settings that are not JSON", () => {
+    const at = "2026-10-15T09:00:00Z";
+    expect(editOf({ intent: "Shop answers", minutes: " 5 ", settings: '{"url":"https://shop.example/health"}', updatedAt: at })).toEqual({
+      edit: { intent: "Shop answers", cadenceMinutes: 5, config: { url: "https://shop.example/health" }, updatedAt: at },
+    });
+    expect(editOf({ intent: "Key works", minutes: "60", settings: null, updatedAt: at })).toEqual({ edit: { intent: "Key works", cadenceMinutes: 60, updatedAt: at } });
+    // Watch refuses a missing or broken number with its own reason.
+    expect(editOf({ intent: "x", minutes: "", settings: null, updatedAt: at })).toEqual({ edit: { intent: "x", cadenceMinutes: Number.NaN, updatedAt: at } });
+    expect(editOf({ intent: "x", minutes: "5", settings: "{url:", updatedAt: at })).toEqual({ error: expect.stringMatching(/^The settings are not valid JSON: /) });
   });
 });

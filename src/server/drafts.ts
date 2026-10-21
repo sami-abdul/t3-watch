@@ -45,7 +45,10 @@ export const draftCheck = async (watch: WatchCore, raw: z.input<typeof DraftChec
   const serviceId = existing?.id ?? `custom:${slug(input.service)}`;
   if (existing === null)
     watch.upsertService({ id: serviceId, vendor: "custom", label: input.service, target: null, reachable: true, note: null, foundIn: ["Added by the agent"] });
-  const id = `${serviceId}:${slug(input.intent)}`;
+  const base = `${serviceId}:${slug(input.intent)}`;
+  // A deleted check keeps its id with its history, so a new one takes the next free id.
+  let id = base;
+  for (let n = 2; watch.store.check(id)?.state === "deleted"; n += 1) id = `${base}-${n}`;
   if (watch.store.check(id) !== null) throw new WatchError(`A check ${id} already exists`);
   const check = watch.defineCheck(
     { id, serviceId, kind, intent: input.intent, config: parsed.data as Record<string, unknown>, keyId, cadenceSeconds: input.cadenceMinutes * 60, origin: "agent" },
@@ -88,7 +91,7 @@ export const decideDraft = async (
     const check = watch.store.check(id);
     if (check === null || check.state !== "draft") throw new WatchError(`No draft check ${id}`, 404);
     if (decision === "approve") await watch.setCheck(id, "on");
-    else watch.store.deleteCheck(id);
+    else watch.store.purgeCheck(id);
     return;
   }
   const draft = watch.store.vendorDrafts().find((d) => d.id === id && d.state === "draft");
@@ -100,7 +103,9 @@ export const decideDraft = async (
 };
 
 export const addNote = (watch: WatchCore, checkId: string | null, text: string) => {
-  if (checkId !== null && watch.store.check(checkId) === null) throw new WatchError(`No check ${checkId}`, 404);
+  // A deleted check shows nowhere a note would be read, so the person hears it another way.
+  if (checkId !== null && watch.requireCheck(checkId).state === "deleted")
+    throw new WatchError(`The check ${checkId} was deleted on the page, so a note on it would show nowhere. Tell the person instead; they can restore it in Details.`, 409);
   const trimmed = text.trim().slice(0, 1000);
   if (trimmed === "") throw new WatchError("A note needs text");
   watch.store.addNote(checkId, trimmed, watch.now());

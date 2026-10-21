@@ -175,6 +175,8 @@ export const deliverAlerts = async (watch: WatchCore, pageUrl: string) => {
   let sent = 0;
   let last: AlertResult | null = null;
   for (const event of watch.store.pendingEvents()) {
+    // Deleted while an earlier change was being sent: it waits, as the queue keeps it.
+    if (watch.store.check(event.checkId)?.state === "deleted") continue;
     const answer = await postAlert(watch, settings.url, settings.secret, JSON.stringify(eventPayload(watch, event, pageUrl)));
     const ok = "ok" in answer && answer.ok;
     // Settings replaced while this was out: the rest of the queue, and any result, belong to them.

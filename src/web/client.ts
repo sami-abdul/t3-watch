@@ -19,6 +19,15 @@ export interface SetupView {
   /** The saved choice, and whether the person has made one yet. */
   readonly choice: SetupChoice & { readonly chosen: boolean };
 }
+/** An edit as the page sends it: settings are left out for a vendor check, whose settings cannot change. */
+export interface CheckEditInput {
+  readonly intent: string;
+  readonly cadenceMinutes: number;
+  readonly config?: unknown;
+  /** The check's updatedAt when Edit opened; Watch refuses the edit if the check changed since. */
+  readonly updatedAt: string;
+}
+
 export type AddKeyResult =
   | { readonly ok: true; readonly summary: string; readonly key: { readonly id: string; readonly account: string | null } }
   | { readonly ok: false; readonly summary: string };
@@ -34,6 +43,12 @@ export interface WatchClient {
   readonly saveChoice: ((choice: SetupChoice) => Promise<{ readonly paused: number; readonly resumed: number }>) | null;
   readonly apply: (input: { turnOn: ReadonlyArray<string>; removeKeys: ReadonlyArray<string> }) => Promise<{ turnedOn: number; failures: ReadonlyArray<{ id: string; message: string }> }>;
   readonly setCheck: (id: string, action: CheckAction, until?: string) => Promise<void>;
+  /** Changes a check's name, how often it runs and its settings. Null in a chat: the person edits on the page. */
+  readonly editCheck: ((id: string, edit: CheckEditInput) => Promise<void>) | null;
+  /** Deletes a check, keeping its history. Null in a chat. */
+  readonly deleteCheck: ((id: string) => Promise<void>) | null;
+  /** Brings a deleted check back, paused. Null in a chat. */
+  readonly restoreCheck: ((id: string) => Promise<void>) | null;
   readonly runs: (id: string) => Promise<ReadonlyArray<Run>>;
   readonly draft: (id: string, action: "approve" | "discard", kind: "check" | "vendor") => Promise<void>;
   /** Null where keys cannot be pasted, such as inside a chat: there `openPage` is used. */
@@ -75,6 +90,15 @@ export const httpClient: WatchClient = {
   apply: (input) => post("/api/apply", input),
   setCheck: async (id, action, until) => {
     await post(`/api/checks/${encodeURIComponent(id)}/${action}`, until === undefined ? {} : { until });
+  },
+  editCheck: async (id, edit) => {
+    await post(`/api/checks/${encodeURIComponent(id)}/edit`, edit);
+  },
+  deleteCheck: async (id) => {
+    await post(`/api/checks/${encodeURIComponent(id)}/delete`);
+  },
+  restoreCheck: async (id) => {
+    await post(`/api/checks/${encodeURIComponent(id)}/restore`);
   },
   runs: async (id) => (await request<{ runs: Array<Run> }>(`/api/checks/${encodeURIComponent(id)}/runs`)).runs,
   draft: async (id, action, kind) => {

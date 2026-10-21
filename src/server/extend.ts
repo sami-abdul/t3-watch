@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 
 import { pageUrl, READS, type Reads, readsOf, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft } from "./drafts.ts";
-import { fromPage, hasPageSession, hasToken, type Route, readJson, sendJson } from "./http.ts";
+import { PAUSED_BY_CHOICE } from "./edits.ts";
+import { fromPage, hasToken, requirePage, type Route, readJson, sendJson } from "./http.ts";
 import { makeMcpServer } from "./mcp.ts";
 import { readSources } from "./scan.ts";
 
@@ -54,8 +55,7 @@ export const extendServer = (options: {
     if (url.pathname !== "/api/setup") return false;
     if (request.method === "POST") {
       // The person chooses on the page: neither the token agents hold nor another site may.
-      if (!hasPageSession(request, watch.store, watch.deps.now()) || !fromPage(request, options.config().publicUrl))
-        throw new WatchError("Choose what Watch may read on the Watch page", 403);
+      requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Choose what Watch may read on the Watch page");
       const body = await readJson(request);
       const roots = folders(body.roots, "roots");
       const skippedRoots = (body.skippedRoots === undefined ? [] : folders(body.skippedRoots, "skippedRoots")).filter((r) => !roots.includes(r));
@@ -73,7 +73,7 @@ export const extendServer = (options: {
       const kindOf = { github: "github", aws: "aws_metric" } as const;
       const turnedOff = (["github", "aws"] as const).filter((login) => before[login] && !chosen[login]).map((login) => kindOf[login]);
       const turnedOn = (["github", "aws"] as const).filter((login) => !before[login] && chosen[login]).map((login) => kindOf[login]);
-      const held = new Set(watch.store.getKv<Array<string>>("pausedByChoice", []));
+      const held = new Set(watch.store.getKv<Array<string>>(PAUSED_BY_CHOICE, []));
       const pausing = watch.store.checks().filter((c) => c.state === "on" && (turnedOff as Array<string>).includes(c.kind));
       for (const check of pausing) {
         await watch.setCheck(check.id, "pause");
@@ -84,7 +84,7 @@ export const extendServer = (options: {
         await watch.setCheck(check.id, "resume");
         held.delete(check.id);
       }
-      watch.store.setKv("pausedByChoice", [...held]);
+      watch.store.setKv(PAUSED_BY_CHOICE, [...held]);
       sendJson(response, 200, { choice: choiceOf(options.config()), paused: pausing.length, resumed: resuming.length });
       return true;
     }
@@ -110,9 +110,7 @@ export const extendServer = (options: {
   // which anything running as this user can.
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
-    const config = options.config();
-    if (!hasPageSession(request, watch.store, watch.deps.now()) || !fromPage(request, config.publicUrl))
-      throw new WatchError("Make the signing secret on the Watch page", 403);
+    requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Make the signing secret on the Watch page");
     sendJson(response, 200, { secret: makeAlertSecret(watch) });
     return true;
   };

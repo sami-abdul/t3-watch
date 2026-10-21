@@ -10,6 +10,7 @@ import { basename, join, relative } from "node:path";
 
 import { type WatchCore as Watch, WatchError } from "./app.ts";
 import { ALL_READS, type Reads } from "./config.ts";
+import { NO_RUNS_NOTE } from "./notices.ts";
 import type { Check, KeyRecord } from "./store.ts";
 import type { Vendor } from "./vendors.ts";
 
@@ -360,7 +361,14 @@ export const runScan = async (
   const findings = await readRepositories(watch, roots, step, reads.envFiles);
   const services: Array<FoundService> = [];
   const proposed: Array<{ check: Check; title: string; optional: boolean }> = [];
-  const define = (
+  /**
+   * Defines a check the scan suggests and lists it. The scan redefines only checks it made: one the
+   * person deleted is left out, a draft waits on Home, and one an agent drafted or the person
+   * edited keeps its name, settings and cadence, with only the key it uses following the scan.
+   */
+  const propose = (
+    title: string,
+    optional: boolean,
     serviceId: string,
     id: string,
     kind: Check["kind"],
@@ -368,8 +376,19 @@ export const runScan = async (
     config: Record<string, unknown>,
     keyId: string | null,
     cadenceSeconds: number,
-  ) =>
-    watch.defineCheck({ id, serviceId, kind, intent, config, keyId, cadenceSeconds, origin: "scan" }, "proposed");
+  ) => {
+    const existing = watch.store.check(id);
+    if (existing?.state === "deleted" || existing?.state === "draft") return;
+    // Only a vendor check of the scan's own vendor takes the scan's key; a key never reaches another vendor's API.
+    const followsKey = existing?.kind === "vendor" && kind === "vendor" && existing.config.vendor === config.vendor && existing.keyId !== keyId;
+    const check =
+      existing !== null && existing.origin !== "scan"
+        ? followsKey
+          ? watch.defineCheck({ ...existing, keyId }, existing.state)
+          : existing
+        : watch.defineCheck({ id, serviceId, kind, intent, config, keyId, cadenceSeconds, origin: "scan" }, "proposed");
+    proposed.push({ check, title, optional });
+  };
 
   // GitHub: the machine's gh login reads each repository's Actions.
   const repos = [...new Set(findings.repositories.map((r) => r.github).filter((r): r is string => r !== null))];
@@ -398,13 +417,8 @@ export const runScan = async (
           watch.deps.run("gh", ["api", `repos/${repo}/actions/runs?per_page=1`, "--jq", ".total_count"]),
         ]);
         const branch = info.code === 0 && info.stdout.trim() !== "" ? info.stdout.trim() : "main";
-        if (runs.code === 0 && runs.stdout.trim() === "0") note = "No GitHub Actions runs yet";
-        else
-          proposed.push({
-            check: define(serviceId, `${serviceId}:ci`, "github", `CI on ${branch} is passing`, { repo, branch }, null, 900),
-            title: repo,
-            optional: false,
-          });
+        if (runs.code === 0 && runs.stdout.trim() === "0") note = NO_RUNS_NOTE;
+        else propose(repo, false, serviceId, `${serviceId}:ci`, "github", `CI on ${branch} is passing`, { repo, branch }, null, 900);
       }
       const foundIn = names.map((n) => `${n} (git remote)`);
       watch.upsertService({ id: serviceId, vendor: "github", label: repo, target: repo, reachable: works, note, foundIn });
@@ -475,14 +489,10 @@ export const runScan = async (
         addKey: null,
       });
       if (profile.region !== null)
-        proposed.push({
-          check: define(serviceId, `${serviceId}:lambda-errors`, "aws_metric", "No Lambda function errors in the last hour", {
-            profile: profile.name, region: profile.region, namespace: "AWS/Lambda", metric: "Errors",
-            statistic: "Sum", periodSeconds: 3600, windowSeconds: 3600, comparison: ">", threshold: 0, missingIsOk: true,
-          }, null, 900),
-          title: label,
-          optional: false,
-        });
+        propose(label, false, serviceId, `${serviceId}:lambda-errors`, "aws_metric", "No Lambda function errors in the last hour", {
+          profile: profile.name, region: profile.region, namespace: "AWS/Lambda", metric: "Errors",
+          statistic: "Sum", periodSeconds: 3600, windowSeconds: 3600, comparison: ">", threshold: 0, missingIsOk: true,
+        }, null, 900);
     }
   }
 
@@ -552,34 +562,43 @@ export const runScan = async (
     });
     if (working !== null)
       for (const definition of vendor.checks)
-        proposed.push({
-          check: define(serviceId, `${serviceId}:${definition.id}`, "vendor", definition.intent, { vendor: vendor.id, check: definition.id }, working.id, vendor.cadenceSeconds),
-          title: vendor.label,
-          optional: definition.type === "fresh" && definition.optional === true,
-        });
+        propose(
+          vendor.label,
+          definition.type === "fresh" && definition.optional === true,
+          serviceId,
+          `${serviceId}:${definition.id}`,
+          "vendor",
+          definition.intent,
+          { vendor: vendor.id, check: definition.id },
+          working.id,
+          vendor.cadenceSeconds,
+        );
   }
 
   step("Running each check once");
   const suggestions: Array<Suggestion> = [];
   for (let i = 0; i < proposed.length; i += 4)
-    suggestions.push(
-      ...(await Promise.all(
-        proposed.slice(i, i + 4).map(async ({ check, title, optional }) => {
-          const result = await watch.runner.trial(check);
-          const state = watch.store.check(check.id)!.state;
-          return {
-            checkId: check.id,
-            serviceId: check.serviceId,
-            title,
-            intent: check.intent,
-            outcome: result.outcome,
-            summary: result.summary,
-            state,
-            suggested: state === "on" || (state === "proposed" && !optional && result.outcome !== "unknown"),
-          };
-        }),
-      )),
-    );
+    for (const suggestion of await Promise.all(
+      proposed.slice(i, i + 4).map(async ({ check: found, title, optional }) => {
+        // As it stands now: one the person deleted while the scan ran is not run, and one they
+        // edited meanwhile is tried as edited.
+        const check = watch.store.check(found.id);
+        if (check === null || check.state === "deleted") return null;
+        const result = await watch.runner.trial(check);
+        const state = watch.store.check(check.id)?.state ?? check.state;
+        return {
+          checkId: check.id,
+          serviceId: check.serviceId,
+          title,
+          intent: check.intent,
+          outcome: result.outcome,
+          summary: result.summary,
+          state,
+          suggested: state === "on" || (state === "proposed" && !optional && result.outcome !== "unknown"),
+        };
+      }),
+    ))
+      if (suggestion !== null) suggestions.push(suggestion);
 
   const scan: Scan = {
     scannedAt: watch.now(),
@@ -610,10 +629,16 @@ export const applyScan = async (
   }
   const turnOn = new Set(input.turnOn);
   const failures: Array<{ id: string; message: string }> = [];
+  // A check deleted on the page stays deleted, whatever was sent, and each one asked for is named,
+  // whether or not the last scan listed it.
+  for (const id of turnOn) {
+    const check = watch.store.check(id);
+    if (check?.state === "deleted") failures.push({ id, message: `${check.intent} was deleted on the page. Restore it in Details first.` });
+  }
   let turnedOn = 0;
   for (const suggestion of scan.suggestions) {
     const check = watch.store.check(suggestion.checkId);
-    if (check === null) continue;
+    if (check === null || check.state === "deleted") continue;
     const usesRemovedKey = check.keyId !== null && removedKeyIds.has(check.keyId);
     if (turnOn.has(check.id) && !usesRemovedKey) {
       if (check.state === "on") {

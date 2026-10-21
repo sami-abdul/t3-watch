@@ -10,8 +10,9 @@ export const changesState = (previous: Outcome | null, outcome: Outcome) =>
 /**
  * proposed: found by setup, waiting for review. on: runs on its cadence. paused: stopped by a
  * person or agent. draft: written by an agent, waiting for a person. off: left off in review.
+ * deleted: removed by the person; it never runs, keeps its runs and changes, and can be restored.
  */
-export type CheckState = "proposed" | "on" | "paused" | "draft" | "off";
+export type CheckState = "proposed" | "on" | "paused" | "draft" | "off" | "deleted";
 export type CheckKind = "http" | "github" | "aws_metric" | "heartbeat" | "vendor";
 
 export interface Service {
@@ -307,7 +308,8 @@ export const openStore = (file: string) => {
     },
     /**
      * Inserts or replaces a check's definition, keeping its run state. A pending run survives only
-     * the same kind, config and key, and an identical definition leaves updated_at alone.
+     * the same kind, config and key, and an identical definition leaves updated_at alone. The
+     * origin follows whoever defined it last, so a check the person edited stays theirs.
      */
     upsertCheck: (c: Omit<Check, "pending">) =>
       exec(
@@ -319,6 +321,7 @@ export const openStore = (file: string) => {
            intent = excluded.intent, config = excluded.config, key_id = excluded.key_id,
            cadence_seconds = excluded.cadence_seconds, state = excluded.state,
            snoozed_until = excluded.snoozed_until, next_run_at = excluded.next_run_at,
+           origin = excluded.origin,
            updated_at = CASE WHEN service_id IS excluded.service_id AND kind = excluded.kind
              AND intent = excluded.intent AND config = excluded.config AND key_id IS excluded.key_id
              AND cadence_seconds = excluded.cadence_seconds AND state = excluded.state
@@ -356,7 +359,8 @@ export const openStore = (file: string) => {
         at,
         id,
       ),
-    deleteCheck: (id: string) => {
+    /** Erases a check with its runs and heartbeats, for a discarded draft. Delete on the page keeps them. */
+    purgeCheck: (id: string) => {
       exec("DELETE FROM checks WHERE id = ?", id);
       exec("DELETE FROM runs WHERE check_id = ?", id);
       exec("DELETE FROM heartbeats WHERE check_id = ?", id);
@@ -465,8 +469,16 @@ export const openStore = (file: string) => {
       ),
     events: (limit = 50) =>
       all("SELECT * FROM events ORDER BY id DESC LIMIT ?", limit).map(toEvent),
+    /**
+     * Changes waiting to be sent. A deleted check's wait, unmarked, so its history never claims they
+     * were sent; they go out only if the person restores it.
+     */
     pendingEvents: () =>
-      all("SELECT * FROM events WHERE delivered_at IS NULL ORDER BY id LIMIT 50").map(toEvent),
+      all(
+        `SELECT events.* FROM events LEFT JOIN checks ON checks.id = events.check_id
+         WHERE events.delivered_at IS NULL AND (checks.state IS NULL OR checks.state != 'deleted')
+         ORDER BY events.id LIMIT 50`,
+      ).map(toEvent),
     markEvent: (id: number, deliveredAt: string | null) =>
       exec(
         "UPDATE events SET delivered_at = ?, attempts = attempts + 1 WHERE id = ?",
@@ -476,6 +488,7 @@ export const openStore = (file: string) => {
     /** Events that happened before alerts were set up are not sent later. */
     dropPendingEvents: (at: string) =>
       exec("UPDATE events SET delivered_at = ? WHERE delivered_at IS NULL", at),
+
 
     keys: () =>
       all("SELECT * FROM keys WHERE removed_at IS NULL ORDER BY created_at").map(toKey),

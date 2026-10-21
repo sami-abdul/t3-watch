@@ -1,5 +1,8 @@
+import { NO_RUNS_NOTE } from "../server/notices.ts";
 import type { AccessRow, FoundService, Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
+import type { CheckKind } from "../server/store.ts";
+import type { CheckEditInput } from "./client.ts";
 
 export type PageView = "scanning" | "empty" | "review" | "home";
 
@@ -96,11 +99,12 @@ export interface ReviewGroups {
   readonly quiet: ReadonlyArray<FoundService>;
 }
 export const reviewGroups = (scan: Scan): ReviewGroups => {
-  const withChecks = new Set(scan.suggestions.map((s) => s.serviceId));
+  // Quiet is what the scan found, no Actions runs yet; a repository whose check the person deleted is not.
+  const quiet = (s: FoundService) => s.reachable && s.vendor === "github" && s.note === NO_RUNS_NOTE;
   return {
-    ready: scan.services.filter((s) => s.reachable && (withChecks.has(s.serviceId) || s.vendor !== "github")),
+    ready: scan.services.filter((s) => s.reachable && !quiet(s)),
     unreachable: scan.services.filter((s) => !s.reachable),
-    quiet: scan.services.filter((s) => s.reachable && s.vendor === "github" && !withChecks.has(s.serviceId)),
+    quiet: scan.services.filter(quiet),
   };
 };
 
@@ -332,4 +336,58 @@ export const isNewCheck = (scan: Scan, suggestion: Scan["suggestions"][number]) 
 export const newChecksToReview = (state: WatchState) => {
   const scan = state.setup.scan;
   return scan === null ? 0 : scan.suggestions.filter((s) => isNewCheck(scan, s)).length;
+};
+
+/** Checks that are on or paused can be edited; the others are decided in the review or on Home first. */
+export const canEdit = (check: Pick<CheckView, "state">) => check.state === "on" || check.state === "paused";
+
+/** Any check but a draft, which Home discards, and one already deleted. */
+export const canDelete = (check: Pick<CheckView, "state">) => check.state !== "draft" && check.state !== "deleted";
+
+/** The Edit form: the check's name, how often it runs in minutes, and its settings as JSON. */
+export interface EditForm {
+  readonly intent: string;
+  readonly minutes: string;
+  /** Null where Edit does not change settings: a vendor check, or a kind this build does not know. */
+  readonly settings: string | null;
+  /** The check as it was when the form opened, so a change made since is not overwritten. */
+  readonly updatedAt: string;
+}
+
+/**
+ * Kinds whose settings Edit changes. A vendor check's come from its vendor's description, and a
+ * kind from another build of Watch has nothing here to check them against.
+ */
+const SETTINGS_KINDS: ReadonlyArray<CheckKind> = ["http", "github", "aws_metric", "heartbeat"];
+
+/** The form as a check stands, with a heartbeat's ping token left out: it never changes here. */
+export const editFormOf = (check: Pick<CheckView, "intent" | "cadenceSeconds" | "kind" | "config" | "updatedAt">): EditForm => {
+  const { token: _, ...rest } = check.config as Record<string, unknown>;
+  return {
+    intent: check.intent,
+    minutes: String(check.cadenceSeconds / 60),
+    settings: SETTINGS_KINDS.includes(check.kind) ? JSON.stringify(check.kind === "heartbeat" ? rest : check.config, null, 2) : null,
+    updatedAt: check.updatedAt,
+  };
+};
+
+/** The edit to send, or why the settings are not JSON. Watch checks everything else and says what is wrong. */
+export const editOf = (form: EditForm): { readonly edit: CheckEditInput } | { readonly error: string } => {
+  let config: unknown;
+  if (form.settings !== null)
+    try {
+      config = JSON.parse(form.settings);
+    } catch (error) {
+      return { error: `The settings are not valid JSON: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  const minutes = form.minutes.trim();
+  // An empty or non-numeric answer goes as it is, for Watch to refuse with its reason.
+  return {
+    edit: {
+      intent: form.intent,
+      cadenceMinutes: minutes === "" ? Number.NaN : Number(minutes),
+      ...(form.settings === null ? {} : { config }),
+      updatedAt: form.updatedAt,
+    },
+  };
 };

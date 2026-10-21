@@ -67,9 +67,15 @@ const makeCore = (options: WatchOptions) => {
     if (check === null) throw new WatchError(`No check ${id}`, 404);
     return check;
   };
+  /** A check that is not deleted: a deleted one takes no action until the person restores it. */
+  const requireLiveCheck = (id: string) => {
+    const check = requireCheck(id);
+    if (check.state === "deleted") throw new WatchError("This check was deleted. Restore it in Details first.", 409);
+    return check;
+  };
 
   const setCheck = async (id: string, action: CheckAction, until?: string) => {
-    const check = requireCheck(id);
+    const check = requireLiveCheck(id);
     const at = now();
     switch (action) {
       case "on":
@@ -157,6 +163,8 @@ const makeCore = (options: WatchOptions) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    requireCheck,
+    requireLiveCheck,
     setCheck,
     addKey,
     removeKey,

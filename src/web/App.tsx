@@ -20,15 +20,18 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
   // Details, and the section it opens on.
   const [details, setDetails] = useState<false | "top" | "alerts">(false);
 
-  const refresh = useCallback(() => {
-    client
-      .state()
-      .then((next) => {
-        setState(next);
-        setError(null);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, [client]);
+  // Settles once the new state is in, for a view that waits on it.
+  const refresh = useCallback(
+    () =>
+      client
+        .state()
+        .then((next) => {
+          setState(next);
+          setError(null);
+        })
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))),
+    [client],
+  );
 
   const scanning = state?.setup.status.running ?? false;
   useEffect(() => {

@@ -5,3 +5,6 @@ export const HELD_NOTICE = "Failures of checks that need it are held for up to a
 
 export const PROBES_DISAGREE_NOTICE =
   "Watch's probe addresses do not answer while checks that need the internet pass, so it is not holding failures. If this network blocks them, set probeUrls in Watch's config.json, in the T3_WATCH_HOME folder, ~/.t3-watch by default.";
+
+/** The scan's note on a repository with no GitHub Actions runs yet, which the review lists apart. */
+export const NO_RUNS_NOTE = "No GitHub Actions runs yet";

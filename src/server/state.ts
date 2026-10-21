@@ -18,8 +18,9 @@ export interface CheckView extends Check {
 }
 
 /**
- * A scan's suggestions as the checks stand now: what each contacts, how often, and its current
- * state, which the review needs to say what applying would change.
+ * A scan's suggestions as the checks stand now: its name, what it contacts, how often, and its
+ * current state, which the review needs to say what applying would change. A check deleted since
+ * the scan leaves the list; Details keeps its history.
  */
 export const withTargets = (
   watch: Watch,
@@ -28,11 +29,11 @@ export const withTargets = (
   target: (check: Check) => string = targetsOf(watch),
 ): Scan => ({
   ...scan,
-  suggestions: scan.suggestions.map((s) => {
+  suggestions: scan.suggestions.flatMap((s) => {
     const check = checks.get(s.checkId);
-    return check === undefined
-      ? s
-      : { ...s, state: check.state, target: target(check), cadence: cadenceOf(check.cadenceSeconds), keyId: check.keyId };
+    if (check === undefined) return [s];
+    if (check.state === "deleted") return [];
+    return [{ ...s, intent: check.intent, state: check.state, target: target(check), cadence: cadenceOf(check.cadenceSeconds), keyId: check.keyId }];
   }),
 });
 
