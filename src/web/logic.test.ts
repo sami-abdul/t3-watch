@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import { accessRows, alertSteps, alertsNotice, latestAlertResult, needsHandover, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
+import { accessRows, alertSteps, alertsNotice, applyChanges, latestAlertResult, needsHandover, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
@@ -37,7 +37,7 @@ const scan: Scan = {
 const check = (over: Partial<CheckView>): CheckView => ({
   id: "c", serviceId: "s", kind: "http", intent: "i", config: {}, keyId: null, cadenceSeconds: 60, state: "on", pending: null,
   snoozedUntil: null, nextRunAt: null, origin: "scan", lastOutcome: "pass", lastSummary: null, lastRunAt: null,
-  createdAt: "", updatedAt: "", serviceLabel: "S", note: null, pingPath: null, ...over,
+  createdAt: "", updatedAt: "", serviceLabel: "S", note: null, pingPath: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
 });
 const state = (over: Partial<WatchState>): WatchState => ({
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
@@ -144,5 +144,34 @@ describe("alerts panel", () => {
     // A test that passed after the failed alert means the fix worked.
     const fixed = { ...failedLater, lastTest: result(true, "2026-10-15T09:30:00.000Z") };
     expect(alertsNotice(state({ alerts: fixed }))).toBeNull();
+  });
+});
+
+describe("applying the review", () => {
+  it("lists what changes: checks turned on with targets, running checks paused, keys removed", () => {
+    const [first, second] = scan.suggestions;
+    const current = {
+      ...scan,
+      suggestions: [
+        { ...first!, state: "proposed" as const, target: "Stripe's API at https://api.stripe.com, with the key ending 1234", cadence: "every 1 h" },
+        { ...second!, state: "on" as const, target: "GitHub Actions in g/ci, read with the gh login", cadence: "every 15 min" },
+      ],
+    };
+    const key = scan.services.flatMap((s) => s.access).find((a) => a.removable)!;
+    const changes = applyChanges(current, { turnOn: [first!.checkId], removeKeys: [key.accessKey] });
+    expect(changes.turnOn).toEqual([{ key: first!.checkId, title: `${first!.title}: ${first!.intent}`, detail: "Stripe's API at https://api.stripe.com, with the key ending 1234 · every 1 h" }]);
+    // Unticked while it runs: it pauses.
+    expect(changes.pause.map((c) => c.key)).toEqual([second!.checkId]);
+    expect(changes.removeKeys).toEqual([{ key: key.accessKey, title: key.source, detail: "Watch deletes its copy of this key" }]);
+    // A check already on stays on: nothing changes for it, so it is not listed.
+    const again = applyChanges(current, { turnOn: [first!.checkId, second!.checkId], removeKeys: [] });
+    expect(again.turnOn.map((c) => c.key)).toEqual([first!.checkId]);
+    expect(again.pause).toEqual([]);
+    expect(applyChanges(current, { turnOn: [second!.checkId], removeKeys: [] })).toEqual({ turnOn: [], pause: [], removeKeys: [] });
+    // A check whose key the review removes neither turns on nor keeps running, as the service applies it.
+    const keyed = { ...current, suggestions: [{ ...current.suggestions[0]!, keyId: key.keyId }, { ...current.suggestions[1]!, keyId: key.keyId }] };
+    const losing = applyChanges(keyed, { turnOn: [first!.checkId, second!.checkId], removeKeys: [key.accessKey] });
+    expect(losing.turnOn).toEqual([]);
+    expect(losing.pause.map((c) => c.key)).toEqual([second!.checkId]);
   });
 });

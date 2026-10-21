@@ -4,13 +4,37 @@ import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
 import type { Check } from "./store.ts";
+import { cadenceOf, targetsOf } from "./targets.ts";
 
 export interface CheckView extends Check {
   readonly serviceLabel: string;
   readonly note: string | null;
   /** Ping URL path for heartbeat checks. */
   readonly pingPath: string | null;
+  /** What the check contacts, in a sentence with no secret in it. */
+  readonly target: string;
+  /** How often it runs, in words. */
+  readonly cadence: string;
 }
+
+/**
+ * A scan's suggestions as the checks stand now: what each contacts, how often, and its current
+ * state, which the review needs to say what applying would change.
+ */
+export const withTargets = (
+  watch: Watch,
+  scan: Scan,
+  checks: ReadonlyMap<string, Check> = new Map(watch.store.checks().map((c) => [c.id, c])),
+  target: (check: Check) => string = targetsOf(watch),
+): Scan => ({
+  ...scan,
+  suggestions: scan.suggestions.map((s) => {
+    const check = checks.get(s.checkId);
+    return check === undefined
+      ? s
+      : { ...s, state: check.state, target: target(check), cadence: cadenceOf(check.cadenceSeconds), keyId: check.keyId };
+  }),
+});
 
 /** Everything the page and the inline view show, in one read. Never contains a key value. */
 export const readState = (watch: Watch) => {
@@ -20,7 +44,12 @@ export const readState = (watch: Watch) => {
   const latestNote = new Map<string, string>();
   for (const note of notes)
     if (note.checkId !== null && !latestNote.has(note.checkId)) latestNote.set(note.checkId, note.text);
-  const checks: Array<CheckView> = watch.store.checks().map((check) => ({
+  const stored = watch.store.checks();
+  // Keys and vendors are read once here, for the targets and for the state's own lists.
+  const keys = watch.keys();
+  const vendors = watch.vendors();
+  const target = targetsOf(watch, keys, vendors);
+  const checks: Array<CheckView> = stored.map((check) => ({
     ...check,
     serviceLabel: labels.get(check.serviceId) ?? check.serviceId,
     note: latestNote.get(check.id) ?? null,
@@ -28,12 +57,14 @@ export const readState = (watch: Watch) => {
       check.kind === "heartbeat" && typeof check.config.token === "string"
         ? `/hb/${check.config.token}`
         : null,
+    target: target(check),
+    cadence: cadenceOf(check.cadenceSeconds),
   }));
   return {
     generatedAt: watch.now(),
     services,
     checks,
-    keys: watch.keys(),
+    keys,
     events: watch.store.events(20),
     notes: notes.filter((n) => n.checkId === null).slice(0, 10),
     vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft"),
@@ -48,9 +79,15 @@ export const readState = (watch: Watch) => {
         lastDelivery: lastAlertDelivery(watch),
       };
     })(),
-    setup: { scan: watch.store.getKv<Scan | null>("scan", null), status: watch.scanner.status() },
+    setup: {
+      scan: (() => {
+        const scan = watch.store.getKv<Scan | null>("scan", null);
+        return scan === null ? null : withTargets(watch, scan, new Map(stored.map((c) => [c.id, c])), target);
+      })(),
+      status: watch.scanner.status(),
+    },
     link: watch.link(),
-    vendors: [...watch.vendors().values()].map((v) => ({
+    vendors: [...vendors.values()].map((v) => ({
       id: v.id,
       label: v.label,
       keyUrl: v.key?.keyUrl ?? null,

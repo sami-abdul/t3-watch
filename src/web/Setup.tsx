@@ -14,6 +14,8 @@ import {
   defaultTicks,
   reviewGroups,
   type Ticks,
+  applyChanges,
+  suggestionDetail,
   toggle,
   warningText,
   watchLabel,
@@ -298,7 +300,8 @@ export function Review({
 }: {
   readonly client: WatchClient;
   readonly scan: Scan;
-  readonly onApplied: () => void;
+  /** Called once applied, with what failed, if anything, for the next screen to show. */
+  readonly onApplied: (failures: string | null) => void;
   /** Scans again at once with the saved choice, as after a key is added. */
   readonly onRescan: () => void;
   /** Shows what Watch may read before scanning again. */
@@ -306,9 +309,29 @@ export function Review({
 }) {
   const [ticks, setTicks] = useState<Ticks>(() => defaultTicks(scan));
   const [applying, setApplying] = useState(false);
+  // What Watch these will apply and the changes it listed, held while the list is open, so the list
+  // stays what the person saw even as the state refreshes behind it.
+  const [confirming, setConfirming] = useState<{ readonly payload: ReturnType<typeof applyPayload>; readonly changes: ReturnType<typeof applyChanges> } | null>(null);
+  // Changing a tick closes the list: it showed the ticks as they were.
+  const changeTicks = (next: Ticks) => {
+    setTicks(next);
+    setConfirming(null);
+  };
   const [error, setError] = useState<string | null>(null);
   const groups = reviewGroups(scan);
   const payload = applyPayload(scan, ticks);
+  const apply = async (chosen: ReturnType<typeof applyPayload>) => {
+    setApplying(true);
+    setError(null);
+    try {
+      const result = await client.apply(chosen);
+      onApplied(result.failures.length > 0 ? result.failures.map((f) => f.message).join(". ") : null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(false);
+    }
+  };
   const ready = scan.services.filter((s) => s.reachable).length;
 
   return (
@@ -332,7 +355,7 @@ export function Review({
             detail: [row.source, row.detail, ...row.warnings.map((w) => warningText[w])].filter(Boolean).join(" · "),
             badge: accessTone[row.status] ?? null,
             ...(row.removable
-              ? { checked: ticks.access.has(row.accessKey), onToggle: () => setTicks({ ...ticks, access: toggle(ticks.access, row.accessKey) }) }
+              ? { checked: ticks.access.has(row.accessKey), onToggle: () => changeTicks({ ...ticks, access: toggle(ticks.access, row.accessKey) }) }
               : {}),
           }))}
         />
@@ -365,10 +388,10 @@ export function Review({
               return {
                 key: s.checkId,
                 title: `${s.title}: ${s.intent}`,
-                detail: available ? s.summary : "Needs the key you unticked",
+                detail: available ? suggestionDetail(s, `Ran once: ${s.summary}`) : "Needs the key you unticked",
                 badge: outcomeTone[s.outcome],
                 checked: available && ticks.checks.has(s.checkId),
-                onToggle: available ? () => setTicks({ ...ticks, checks: toggle(ticks.checks, s.checkId) }) : null,
+                onToggle: available ? () => changeTicks({ ...ticks, checks: toggle(ticks.checks, s.checkId) }) : null,
               };
             })}
           />
@@ -381,32 +404,66 @@ export function Review({
         ) : null}
       </Section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Muted className={typeClass("caption")}>Untick what you don't want. You can change any of it later.</Muted>
-        <span className="flex gap-2">
-          <Button variant="ghost" onClick={onChoose}>
-            Scan again
-          </Button>
-          <Button
-            loading={applying}
-            onClick={async () => {
-              setApplying(true);
-              setError(null);
-              try {
-                const result = await client.apply(payload);
-                if (result.failures.length > 0) setError(result.failures.map((f) => f.message).join(". "));
-                onApplied();
-              } catch (e) {
-                setError(e instanceof Error ? e.message : String(e));
-              } finally {
-                setApplying(false);
-              }
-            }}
-          >
-            {watchLabel(payload.turnOn.length)}
-          </Button>
-        </span>
-      </div>
+      {confirming !== null ? (
+        (() => {
+          const changes = confirming.changes;
+          const onlyTurnOn = changes.pause.length === 0 && changes.removeKeys.length === 0;
+          const n = changes.turnOn.length;
+          return (
+            <Section title={onlyTurnOn ? (n === 1 ? "Turn this check on?" : `Turn these ${n} checks on?`) : "Apply these changes?"}>
+              {changes.turnOn.length > 0 ? (
+                <>
+                  <Muted className={typeClass("caption")}>
+                    {onlyTurnOn ? (n === 1 ? "It runs" : "Each runs") : "These turn on and each runs"} on its own, as often as shown, until you pause it.
+                  </Muted>
+                  <RowList label="Checks to turn on" rows={changes.turnOn} />
+                </>
+              ) : null}
+              {changes.pause.length > 0 ? (
+                <>
+                  <Muted className={typeClass("caption")}>Unticked, so these stop running until you turn them back on.</Muted>
+                  <RowList label="Checks to pause" rows={changes.pause} />
+                </>
+              ) : null}
+              {changes.removeKeys.length > 0 ? (
+                <>
+                  <Muted className={typeClass("caption")}>Unticked, so Watch deletes these keys and checks that need them stop.</Muted>
+                  <RowList label="Keys to remove" rows={changes.removeKeys} />
+                </>
+              ) : null}
+              <div className="flex flex-wrap justify-end gap-2">
+                {/* Backing out mid-apply would not stop it, so Back waits for the answer. */}
+                <Button variant="ghost" disabled={applying} onClick={() => setConfirming(null)}>
+                  Back
+                </Button>
+                <Button loading={applying} onClick={() => apply(confirming.payload)}>
+                  {onlyTurnOn ? (n === 1 ? "Turn it on" : "Turn them on") : "Apply"}
+                </Button>
+              </div>
+            </Section>
+          );
+        })()
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Muted className={typeClass("caption")}>Untick what you don't want. You can change any of it later.</Muted>
+          <span className="flex gap-2">
+            <Button variant="ghost" onClick={onChoose}>
+              Scan again
+            </Button>
+            {/* Applying that turns nothing on, pauses nothing and removes no key needs no list. */}
+            <Button
+              loading={applying}
+              onClick={() => {
+                const changes = applyChanges(scan, payload);
+                if (changes.turnOn.length + changes.pause.length + changes.removeKeys.length === 0) void apply(payload);
+                else setConfirming({ payload, changes });
+              }}
+            >
+              {watchLabel(payload.turnOn.length)}
+            </Button>
+          </span>
+        </div>
+      )}
       {error !== null ? <Muted className="text-destructive">{error}</Muted> : null}
     </div>
   );

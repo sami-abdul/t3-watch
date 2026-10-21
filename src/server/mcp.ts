@@ -15,7 +15,7 @@ import { ALL_READS, type Reads } from "./config.ts";
 import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "./drafts.ts";
 import { readSources } from "./scan.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
-import { homeText, readState } from "./state.ts";
+import { homeText, readState, withTargets } from "./state.ts";
 
 export const HOME_URI = "ui://t3-watch/home";
 
@@ -157,7 +157,7 @@ export const makeMcpServer = (
       return text(
         json({
           services: scan.services.map((s) => ({ id: s.serviceId, label: s.label, reachable: s.reachable, note: s.note, access: s.access.map((a) => ({ key: a.accessKey, source: a.source, status: a.status, detail: a.detail, warnings: a.warnings })) })),
-          suggestions: scan.suggestions.map((s) => ({ checkId: s.checkId, intent: `${s.title}: ${s.intent}`, outcome: s.outcome, summary: s.summary, suggested: s.suggested })),
+          suggestions: withTargets(watch, scan).suggestions.map((s) => ({ checkId: s.checkId, intent: `${s.title}: ${s.intent}`, target: s.target ?? null, cadence: s.cadence ?? null, outcome: s.outcome, summary: s.summary, suggested: s.suggested })),
           next: "Show this to the person, then call watch_apply with the checks they want on.",
         }),
       );

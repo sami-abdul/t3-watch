@@ -49,6 +49,36 @@ export const applyPayload = (scan: Scan, ticks: Ticks) => ({
     .map((a) => a.accessKey),
 });
 
+/** A suggestion's detail line: what it contacts and how often, then anything after. */
+export const suggestionDetail = (s: Scan["suggestions"][number], ...more: ReadonlyArray<string>) =>
+  [s.target ?? null, s.cadence ?? null, ...more].filter((part) => part !== null).join(" · ");
+
+export interface Change {
+  readonly key: string;
+  readonly title: string;
+  readonly detail: string;
+}
+
+/**
+ * What applying the review changes, as the checks stand now: checks it turns on, each with what
+ * it contacts and how often; running checks it pauses because they are unticked; keys it removes.
+ * Checks already on and suggestions never turned on are left out, since nothing about them runs
+ * differently afterwards.
+ */
+export const applyChanges = (scan: Scan, payload: { readonly turnOn: ReadonlyArray<string>; readonly removeKeys: ReadonlyArray<string> }) => {
+  const row = (s: Scan["suggestions"][number]): Change => ({ key: s.checkId, title: `${s.title}: ${s.intent}`, detail: suggestionDetail(s) });
+  const turnOn = new Set(payload.turnOn);
+  const rows = scan.services.flatMap((s) => s.access);
+  // As the service applies it: a check whose key is removed neither turns on nor keeps running.
+  const removedKeys = new Set(rows.filter((r) => payload.removeKeys.includes(r.accessKey) && r.keyId !== null).map((r) => r.keyId));
+  const losesKey = (s: Scan["suggestions"][number]) => s.keyId !== undefined && s.keyId !== null && removedKeys.has(s.keyId);
+  return {
+    turnOn: scan.suggestions.filter((s) => turnOn.has(s.checkId) && s.state !== "on" && !losesKey(s)).map(row),
+    pause: scan.suggestions.filter((s) => s.state === "on" && (!turnOn.has(s.checkId) || losesKey(s))).map(row),
+    removeKeys: payload.removeKeys.map((key): Change => ({ key, title: rows.find((r) => r.accessKey === key)?.source ?? key, detail: "Watch deletes its copy of this key" })),
+  };
+};
+
 export const watchLabel = (count: number) =>
   count === 0 ? "Save without checks" : `Watch ${count === 1 ? "this check" : `these ${count}`}`;
 

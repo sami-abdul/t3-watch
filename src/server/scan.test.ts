@@ -232,4 +232,14 @@ describe("scan", () => {
     expect(watch.store.check("vendor:pipedrive:key")!.state).toBe("on");
     expect(watch.store.check("vendor:stripe:activity")!.state).toBe("off");
   });
+
+  it("pauses a running check whose key the review removes", async () => {
+    const { watch } = makeFixture();
+    const scan = await watch.scanner.start();
+    await watch.applyScan({ turnOn: ["vendor:stripe:key"], removeKeys: [] });
+    expect(watch.store.check("vendor:stripe:key")!.state).toBe("on");
+    const stripeRow = scan.services.find((s) => s.serviceId === "vendor:stripe")!.access[0]!;
+    await watch.applyScan({ turnOn: ["vendor:stripe:key"], removeKeys: [stripeRow.accessKey] });
+    expect(watch.store.check("vendor:stripe:key")!.state).toBe("paused");
+  });
 });

@@ -79,8 +79,9 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
           key={state.setup.scan!.scannedAt}
           client={client}
           scan={state.setup.scan!}
-          onApplied={() => {
+          onApplied={(failures) => {
             setWantsReview(false);
+            setNote(failures === null ? null : { text: failures, failed: true });
             refresh();
           }}
           onRescan={rescan}

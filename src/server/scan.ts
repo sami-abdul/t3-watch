@@ -48,6 +48,12 @@ export interface Suggestion {
   readonly state: Check["state"];
   /** Whether the review ticks it by default. */
   readonly suggested: boolean;
+  /** What the check contacts, filled in when the state is read, so it follows the current key. */
+  readonly target?: string;
+  /** How often it runs once on, in words, filled in with the target. */
+  readonly cadence?: string;
+  /** The key the check uses, filled in with the target, so the review knows which keys it needs. */
+  readonly keyId?: string | null;
 }
 export interface Scan {
   readonly scannedAt: string;
@@ -621,6 +627,8 @@ export const applyScan = async (
         failures.push({ id: check.id, message: error instanceof Error ? error.message : String(error) });
       }
     } else if (check.state === "proposed") watch.store.setCheckState(check.id, "off", watch.now());
+    // A running check whose key was just removed cannot run, so it pauses rather than fail.
+    else if (check.state === "on" && usesRemovedKey) await watch.setCheck(check.id, "pause");
     else if (check.state === "on" && !turnOn.has(check.id)) await watch.setCheck(check.id, "pause");
   }
   const states = new Map(watch.store.checks().map((c) => [c.id, c.state]));

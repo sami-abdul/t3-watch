@@ -18,9 +18,6 @@ const stateTone: Record<string, Tone> = {
   draft: { color: "violet", label: "Draft" },
 };
 
-const cadence = (seconds: number) =>
-  seconds % 3600 === 0 ? `every ${seconds / 3600} h` : `every ${Math.round(seconds / 60)} min`;
-
 function Runs({ client, check }: { readonly client: WatchClient; readonly check: CheckView }) {
   const [runs, setRuns] = useState<ReadonlyArray<Run> | null>(null);
   if (runs === null)
@@ -142,7 +139,7 @@ export function Details({
               title: `${check.serviceLabel}: ${check.intent}`,
               detail: [
                 snoozed ? `Snoozed until ${new Date(check.snoozedUntil!).toLocaleString()}` : null,
-                `${check.kind} · ${cadence(check.cadenceSeconds)}`,
+                `${check.target} · ${check.cadence}`,
                 check.lastSummary === null ? "Not run yet" : `${check.lastSummary} · ${ago(check.lastRunAt, now)}`,
                 check.pingPath === null ? null : `Ping ${location.origin}${check.pingPath} from the job (add ?status=fail on failure)`,
               ]
