@@ -25,6 +25,6 @@
 - [x] 3.1 Tests, typecheck, build and `openspec validate add-alerts-connect-panel --strict`.
 - [x] 3.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 10, 10 and 8; 27 fixed, 1 declined in `.wattson/decisions.md`.
-- [ ] 3.3 On Leviathan after a short restart: the panel in a browser, a test alert from the page
+- [x] 3.3 On Leviathan after a short restart: the panel in a browser, a test alert from the page
       accepted and reported by `t3-watch alerts`, and 22 of 22 checks passing. `t3-watch alerts test`
       is proven on a scratch Watch, so the live thread wakes once.
