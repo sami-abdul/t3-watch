@@ -85,6 +85,17 @@ describe("t3-watch signout", () => {
   });
 });
 
+describe("t3-watch install", () => {
+  it("refuses a flag it does not know before touching anything", () => {
+    const cli = join(import.meta.dirname, "cli.ts");
+    for (const command of ["install", "uninstall"]) {
+      const run = spawnSync(process.execPath, [cli, command, "--al"], { encoding: "utf8" });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(`t3-watch ${command} takes only --all, not --al`);
+    }
+  });
+});
+
 describe("t3-watch alerts", () => {
   const cli = join(import.meta.dirname, "cli.ts");
   const { T3_WATCH_PORT: _port, T3_WATCH_HOST: _host, ...rest } = process.env;

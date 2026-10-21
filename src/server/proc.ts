@@ -11,7 +11,8 @@ export interface ProcResult {
 export type RunProc = (
   command: string,
   args: ReadonlyArray<string>,
-  options?: { readonly cwd?: string; readonly timeoutMs?: number },
+  /** `env` adds variables for the command; an undefined value removes one it would inherit. */
+  options?: { readonly cwd?: string; readonly timeoutMs?: number; readonly env?: Readonly<Record<string, string | undefined>> },
 ) => Promise<ProcResult>;
 
 export const runProc: RunProc = (command, args, options = {}) =>
@@ -23,7 +24,11 @@ export const runProc: RunProc = (command, args, options = {}) =>
         cwd: options.cwd,
         timeout: options.timeoutMs ?? 20_000,
         maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, AWS_PAGER: "", GH_PROMPT_DISABLED: "1", NO_COLOR: "1" },
+        env: Object.fromEntries(
+          Object.entries({ ...process.env, AWS_PAGER: "", GH_PROMPT_DISABLED: "1", NO_COLOR: "1", ...options.env }).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
       },
       (error, stdout, stderr) => {
         const failure = error as (NodeJS.ErrnoException & { killed?: boolean }) | null;

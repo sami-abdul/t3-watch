@@ -8,7 +8,8 @@ import { makeWatch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { listenHosts, loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
-import { liveDeps, runProc } from "./proc.ts";
+import { liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
+import { homeEnv, type ProviderHome, providerHomes, readT3Settings, t3SettingsFile } from "./providers.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import type { WatchState } from "./state.ts";
 import { openStore } from "./store.ts";
@@ -169,31 +170,93 @@ export const systemdQuote = (value: string, execLine: boolean) => {
   return `"${escaped}"`;
 };
 
-const registerMcp = async () => {
+const scopeArgs = (provider: ProviderHome) => (provider.cli === "claude" ? ["-s", "user"] : []);
+
+/** A command to copy later, with the home variable set or unset in front. */
+const laterCommand = (provider: ProviderHome, args: ReadonlyArray<string>) =>
+  [
+    ...Object.entries(homeEnv(provider)).map(([name, value]) => (value === undefined ? `env -u ${name}` : `${name}=${shellQuote(value)}`)),
+    shellQuote(provider.command),
+    ...args.map(shellQuote),
+  ].join(" ");
+
+/** How a failed run reads: a hang, or what the CLI said, or its exit code. */
+const failureText = (result: ProcResult, hung: string, verb: "add" | "remove") =>
+  result.timedOut ? hung : `could not ${verb} the MCP server: ${result.stderr.trim().split("\n")[0]!.slice(0, 200) || `exit ${result.code}`}`;
+
+const removedText = (result: ProcResult) =>
+  // Codex answers "No MCP server named ... found." with exit 0, so the words come first.
+  /no mcp server/i.test(`${result.stderr} ${result.stdout}`)
+    ? `had no ${SERVICE} MCP server`
+    : result.missing
+      ? "not installed"
+      : result.code === 0
+        ? `removed the ${SERVICE} MCP server`
+        : failureText(result, "did not answer in time, so the MCP server may still be there", "remove");
+
+const addedText = (result: ProcResult, provider: ProviderHome, add: ReadonlyArray<string>) =>
+  result.missing
+    ? `not installed. Later run: ${laterCommand(provider, add)}`
+    : result.code === 0
+      ? `added the ${SERVICE} MCP server`
+      : failureText(result, "did not answer in time, so the MCP server may be half added; run install again", "add");
+
+/**
+ * Adds Watch's MCP server to the default Codex and Claude Code homes, or with `all` to every
+ * provider home in T3's settings too, or removes it from them. Says what happened in each home,
+ * and how many more homes --all would cover.
+ */
+export const registerMcp = async (options: {
+  readonly all: boolean;
+  readonly remove?: boolean;
+  readonly settings?: unknown;
+  readonly run?: RunProc;
+  /** The environment whose CLAUDE_CONFIG_DIR and CODEX_HOME name the default homes. */
+  readonly env?: NodeJS.ProcessEnv;
+  readonly exists?: (path: string) => boolean;
+}) => {
+  const run = options.run ?? runProc;
   const [node, bin] = binCommand();
+  const { settings, problem } =
+    options.settings === undefined
+      ? readT3Settings()
+      : { settings: options.settings, problem: options.settings === null ? `no settings at ${t3SettingsFile()}` : null };
+  const { defaults, extra, skipped } = providerHomes(settings, { includeDisabled: options.remove === true, env: options.env });
   const lines: Array<string> = [];
-  for (const [cli, remove, add] of [
-    ["codex", ["mcp", "remove", SERVICE], ["mcp", "add", SERVICE, "--", node!, bin!, "mcp"]],
-    [
-      "claude",
-      ["mcp", "remove", "-s", "user", SERVICE],
-      ["mcp", "add", "-s", "user", SERVICE, "--", node!, bin!, "mcp"],
-    ],
-  ] as const) {
-    await runProc(cli, remove);
-    const result = await runProc(cli, add);
+  // One home at a time: Codex homes can share files, and two writers would lose an entry.
+  const exists = options.exists ?? existsSync;
+  for (const provider of options.all ? [...defaults, ...extra] : defaults) {
+    // A home not made yet has nothing to remove, and a CLI pointed at it may refuse to start.
+    if (provider.home !== null && !exists(provider.home)) {
+      lines.push(`${provider.label}: ${options.remove === true ? `had no ${SERVICE} MCP server` : "skipped, its home does not exist yet"}`);
+      continue;
+    }
+    const env = homeEnv(provider);
+    const inHome = async (args: ReadonlyArray<string>) => {
+      const result = await run(provider.command, args, { env });
+      return result.missing && provider.fallback !== undefined ? run(provider.fallback, args, { env }) : result;
+    };
+    const removed = await inHome(["mcp", "remove", ...scopeArgs(provider), SERVICE]);
+    if (options.remove === true) {
+      lines.push(`${provider.label}: ${removedText(removed)}`);
+      continue;
+    }
+    const add = ["mcp", "add", ...scopeArgs(provider), SERVICE, "--", node!, bin!, "mcp"];
+    lines.push(`${provider.label}: ${addedText(await inHome(add), provider, add)}`);
+  }
+  if (options.all) {
+    if (problem !== null) lines.push(`T3 Code: ${problem}, so only the default homes.`);
+    for (const left of skipped) lines.push(`${left.label}: skipped, ${left.reason}`);
+  } else if (extra.length > 0) {
+    const more = extra.length;
     lines.push(
-      result.missing
-        ? `${cli}: not installed. Later run: ${cli} mcp add ${cli === "claude" ? "-s user " : ""}${SERVICE} -- ${shellQuote(node!)} ${shellQuote(bin!)} mcp`
-        : result.code === 0
-          ? `${cli}: added the ${SERVICE} MCP server`
-          : `${cli}: could not add the MCP server: ${result.stderr.trim().slice(0, 200)}`,
+      `T3 Code lists ${more} more provider home${more === 1 ? "" : "s"}. To cover ${more === 1 ? "it" : "them"} too: t3-watch ${options.remove === true ? "uninstall" : "install"} --all`,
     );
   }
   return lines;
 };
 
-const install = async () => {
+const install = async (all: boolean) => {
   const [node, bin] = binCommand();
   if (!existsSync(join(packageRoot(), "dist", "server", "cli.js")))
     throw new Error("Build first: pnpm build");
@@ -249,7 +312,7 @@ WantedBy=default.target
     if (enabled.code !== 0) throw new Error(`systemctl failed: ${enabled.stderr.trim()}`);
     await runProc("systemctl", ["--user", "restart", SERVICE]);
   } else throw new Error("install supports Linux and macOS. Run t3-watch start yourself.");
-  for (const line of await registerMcp()) console.log(line);
+  for (const line of await registerMcp({ all })) console.log(line);
   console.log(`\nWatch runs in the background at ${pageUrl(config)}`);
   // The link is one-time and short-lived, and never carries the access token, so it is safe to
   // print even when an agent runs install.
@@ -259,7 +322,7 @@ WantedBy=default.target
     console.log("To keep it running while you are logged out: loginctl enable-linger $USER");
 };
 
-const uninstall = async () => {
+const uninstall = async (all: boolean) => {
   if (platform() === "darwin") {
     const file = join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
     await runProc("launchctl", ["bootout", `gui/${process.getuid?.() ?? ""}`, file]);
@@ -269,9 +332,8 @@ const uninstall = async () => {
     rmSync(join(homedir(), ".config", "systemd", "user", `${SERVICE}.service`), { force: true });
     await runProc("systemctl", ["--user", "daemon-reload"]);
   }
-  await runProc("codex", ["mcp", "remove", SERVICE]);
-  await runProc("claude", ["mcp", "remove", "-s", "user", SERVICE]);
-  console.log(`Removed the service and MCP registrations. Your data stays in ${watchHome()}.`);
+  for (const line of await registerMcp({ all, remove: true })) console.log(line);
+  console.log(`Removed the service. Your data stays in ${watchHome()}.`);
 };
 
 /** Whether a folder holds a Watch, checked before a command that would otherwise create one there. */
@@ -382,7 +444,8 @@ const HELP = `t3-watch: watches the systems you run.
 
   t3-watch start       Run the service in the foreground
   t3-watch install     Run it in the background at login and register it with Codex and Claude Code
-  t3-watch uninstall   Undo install, keeping your data
+                       --all: in every provider home T3 Code runs, too
+  t3-watch uninstall   Undo install, keeping your data; --all for every T3 provider home
   t3-watch url         Print a one-time sign-in link for the page
   t3-watch signout     Sign every browser out of the page; agents keep working
   t3-watch status      Say whether it is running and what is failing
@@ -395,8 +458,15 @@ export const main = async (args: ReadonlyArray<string>) => {
   const command = args[0] ?? "help";
   try {
     if (command === "start") await start();
-    else if (command === "install") await install();
-    else if (command === "uninstall") await uninstall();
+    else if (command === "install" || command === "uninstall") {
+      const unknown = args.slice(1).filter((arg) => arg !== "--all");
+      if (unknown.length > 0) {
+        console.error(`t3-watch ${command} takes only --all, not ${unknown.join(" ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      await (command === "install" ? install : uninstall)(args.includes("--all"));
+    }
     else if (command === "signout") {
       const home = watchHome();
       // Opening the store would make an empty one, and "Signed out 0 browsers" would hide the typo.

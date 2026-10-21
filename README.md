@@ -25,6 +25,10 @@ each other browser, `t3-watch url` prints a new one, or ask your Watch thread fo
 browser gets its own session, never the access token agents use, and `t3-watch signout` signs
 every browser out while agents keep working.
 
+T3 Code can run several accounts for one provider, each in its own home. `t3-watch install --all`
+also adds Watch's MCP server to every enabled Claude Code and Codex home in T3's settings, so a
+Watch thread works on any account, and `t3-watch uninstall --all` takes it out of them again.
+
 To run from a checkout instead, clone this repository, run `pnpm install && pnpm build`, then
 `node bin/t3-watch.js install`.
 
