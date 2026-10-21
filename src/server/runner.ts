@@ -29,7 +29,15 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
       // the check as it was, with no event, for at most an hour of the check's runs in a row.
       let recorded = result;
       if (result.outcome === "pass") {
-        if (provesInternet(fresh, context.vendors())) void link.sawInternet();
+        if (provesInternet(fresh, context.vendors())) {
+          // A run someone asked for waits for any recheck, so what they see next is current; a
+          // scheduled run does not hold up its batch for it.
+          const rechecking = link.sawInternet();
+          if (manual) {
+            await rechecking;
+            if (context.store.check(fresh.id)?.updatedAt !== check.updatedAt) return null;
+          }
+        }
       } else if (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline())) {
         const offline = await link.hold();
         // And one made while the probe ran.

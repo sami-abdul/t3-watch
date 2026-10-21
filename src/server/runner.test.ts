@@ -441,7 +441,6 @@ describe("runner while Watch is offline", () => {
       await watch.runner.tick();
       expect(watch.store.check("site")!.lastOutcome).toBe("pass");
       await watch.setCheck("other", "run");
-      await watch.linkSettled();
     }
     expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true });
     expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in Watch's config\.json/);
@@ -452,6 +451,40 @@ describe("runner while Watch is offline", () => {
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastOutcome).toBe("fail");
     expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
+  });
+
+  it("does not hold up a scheduled run while the recheck it set off hangs", async () => {
+    const probes = new Set(["https://www.gstatic.com/generate_204", "https://one.one.one.one/cdn-cgi/trace"]);
+    const net = { siteUp: true, hang: false };
+    const hanging: Array<(error: Error) => void> = [];
+    const fake = fakeDeps({
+      fetch: (url) => {
+        if (probes.has(url.href)) {
+          if (net.hang) return new Promise<Response>((_resolve, reject) => hanging.push(reject));
+          throw new TypeError("blocked");
+        }
+        return url.href === SITE && !net.siteUp ? new Response("down", { status: 503 }) : new Response("ok");
+      },
+    });
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps });
+    const define = (id: string, url: string, cadenceSeconds: number) =>
+      watch.defineCheck({ id, serviceId: "s", kind: "http", intent: id, config: { url }, keyId: null, cadenceSeconds, origin: "user" }, "on");
+    define("site", SITE, 60);
+    await watch.runner.tick();
+    // The site fails and finds the probes silent, so Watch counts itself offline.
+    net.siteUp = false;
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(watch.link().offlineSince).not.toBeNull();
+    // A public check passes on its first scheduled run and sets off a recheck that hangs.
+    net.hang = true;
+    define("other", "https://other.example/", 3600);
+    const finished = await Promise.race([
+      watch.runner.tick().then(() => "finished"),
+      new Promise((resolve) => setTimeout(() => resolve("waited"), 1000)),
+    ]);
+    expect(finished).toBe("finished");
+    for (const reject of hanging) reject(new TypeError("fetch failed"));
   });
 
   it("does not probe for a failure that changes nothing", async () => {

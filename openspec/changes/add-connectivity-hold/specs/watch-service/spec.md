@@ -99,9 +99,8 @@ disagreements in the last hour, Watch SHALL treat its probe list as wrong: it SH
 failures or count itself offline, and Home and the text status SHALL say the probe addresses do
 not answer while checks that need the internet pass, and point at `probeUrls`. The doubt SHALL
 last until a probe answers or Watch restarts, and while it lasts a passing check SHALL recheck the
-list at most every 5 minutes. A probe that answers SHALL clear the disagreements, a probe that began
-before another one answered SHALL NOT count one, and an answer from a probe that began before the
-latest disagreement SHALL NOT clear it.
+list at most every 5 minutes. A probe that answers SHALL clear the disagreements; between an answer and
+a disagreement, the one whose probe began later SHALL win, whichever finishes first.
 
 #### Scenario: A network that blocks the probe addresses
 

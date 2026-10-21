@@ -162,6 +162,36 @@ describe("connectivity", () => {
     expect(link.link().probesDisagree).toBe(true);
   });
 
+  it("lets a probe begun after a failing recheck clear the doubt, even when it answers later", async () => {
+    const net = { up: false, hang: false };
+    const hanging: Array<{ resolve: (response: Response) => void; reject: (error: Error) => void }> = [];
+    const fake = fakeDeps({
+      fetch: () => {
+        if (net.hang) return new Promise<Response>((resolve, reject) => hanging.push({ resolve, reject }));
+        if (!net.up) throw new TypeError("fetch failed");
+        return new Response(null, { status: 204 });
+      },
+    });
+    const link = makeConnectivity(fake.deps);
+    await link.hold();
+    await link.sawInternet();
+    fake.advance(16);
+    await link.hold();
+    // A recheck begins, then a probe; the recheck fails first, then the probe answers.
+    net.hang = true;
+    fake.advance(1);
+    const recheck = link.sawInternet();
+    // Past the 15-second reuse window, so the probe is a new one.
+    fake.advance(15);
+    const probe = link.hold();
+    for (const pending of hanging.slice(0, 2)) pending.reject(new TypeError("fetch failed"));
+    await recheck;
+    expect(link.link().probesDisagree).toBe(true);
+    hanging[2]!.resolve(new Response(null, { status: 204 }));
+    await probe;
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
   it("counts no disagreement when an outage simply ends", async () => {
     const { link, net, advance } = setup();
     for (let i = 0; i < 2; i++) {

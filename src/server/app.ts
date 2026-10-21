@@ -136,8 +136,6 @@ const makeCore = (options: WatchOptions) => {
     keyring,
     runner,
     link: connectivity.link,
-    /** Settles when a recheck of the probe list in flight is done. */
-    linkSettled: connectivity.settled,
     deps: options.deps,
     now,
     vendors: () => catalog,

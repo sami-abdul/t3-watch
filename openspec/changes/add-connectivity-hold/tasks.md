@@ -122,6 +122,11 @@
 - [x] 7.9 `src/server/runner.ts`, `src/server/app.ts`, `src/server/notices.ts`,
       `src/server/runner.test.ts`: the runner no longer waits on the recheck, tests sync through
       `linkSettled`, and the notice names the `T3_WATCH_HOME` folder.
+- [x] 7.10 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: one ordering rule, by
+      start time, for answers and disagreements, and the recheck cannot reject.
+- [x] 7.11 `src/server/runner.ts`, `src/server/app.ts`, `src/server/runner.test.ts`: a run someone
+      asks for waits for its recheck and checks the guard again; scheduled runs do not, and the
+      test hook goes.
 - [ ] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance with a probe address that refuses and a check that reaches the
       internet, a failing check is recorded once the list is flagged, and Home shows the notice.

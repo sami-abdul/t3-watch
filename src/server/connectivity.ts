@@ -84,28 +84,33 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   let lastFailedProbeAt = Number.NEGATIVE_INFINITY;
   let lastPassAt = Number.NEGATIVE_INFINITY;
   let probe: { readonly at: number; readonly answer: Promise<boolean> } | null = null;
-  // When fresh probes failed right after a check reached the internet, in the last hour.
+  // When rechecks began whose probes failed right after a check reached the internet, last hour.
   let disagreements: ReadonlyArray<number> = [];
-  // Set by the second disagreement in an hour; only a probe that answers, or a restart, clears it.
+  // Set by the second disagreement in an hour. Cleared by a probe that answers and began after the
+  // latest disagreement's recheck, or by a restart.
   let doubted = false;
-  let lastAnswerAt = Number.NEGATIVE_INFINITY;
-  let lastDisagreeAt = Number.NEGATIVE_INFINITY;
+  // Between an answer and a disagreement, the one whose probe began later wins, whichever finishes
+  // first. Each marker is the start of the latest probe of its kind that counted.
+  let lastAnswerStart = Number.NEGATIVE_INFINITY;
+  let lastDisagreeStart = Number.NEGATIVE_INFINITY;
   let lastVerifyAt = Number.NEGATIVE_INFINITY;
   let verifying: Promise<void> | null = null;
 
   /** When the current offline spell began, while a failed probe in the last 30 minutes vouches for it. */
   const since = () => (offlineSince !== null && now() - lastFailedProbeAt <= OFFLINE_LAPSE_MS ? offlineSince : null);
 
-  /** A probe that began at `startedAt` answered. A disagreement newer than its start outranks it. */
+  /** A probe that began at `startedAt` answered; it clears the doubt unless a later recheck disagreed. */
   const answered = (startedAt: number) => {
-    lastAnswerAt = now();
-    if (startedAt < lastDisagreeAt) return;
+    if (startedAt < lastDisagreeStart) return;
+    lastAnswerStart = Math.max(lastAnswerStart, startedAt);
     disagreements = [];
     doubted = false;
   };
-  const disagree = (at: number) => {
-    lastDisagreeAt = at;
-    disagreements = [...disagreements.filter((t) => at - t <= DISAGREE_SPAN_MS), at];
+  /** A recheck that began at `startedAt` failed; it counts unless a later probe answered. */
+  const disagree = (startedAt: number) => {
+    if (startedAt < lastAnswerStart) return;
+    lastDisagreeStart = Math.max(lastDisagreeStart, startedAt);
+    disagreements = [...disagreements.filter((t) => startedAt - t <= DISAGREE_SPAN_MS), startedAt];
     if (disagreements.length >= 2) doubted = true;
   };
 
@@ -152,11 +157,9 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     const startedAt = now();
     lastVerifyAt = startedAt;
     verifying = reach(probeUrls(setting()))
-      .then((online) => {
-        if (online) answered(startedAt);
-        // A probe that answered after this one began is newer evidence, so this one counts nothing.
-        else if (lastAnswerAt < startedAt) disagree(now());
-      })
+      .then((online) => (online ? answered(startedAt) : disagree(startedAt)))
+      // Nothing above should throw, and a runner that does not wait on this must never see it.
+      .catch(() => {})
       .finally(() => {
         verifying = null;
       });
@@ -182,8 +185,6 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
       offlineSince = null;
       return wasOffline || (doubted && now() - lastVerifyAt >= RECHECK_MS) ? verify() : Promise.resolve();
     },
-    /** Settles when a recheck of the probe list in flight is done, for callers that need its result. */
-    settled: (): Promise<void> => verifying ?? Promise.resolve(),
     /** Whether Watch counts itself offline, without probing. */
     offline: () => offlineFrom() !== null,
     /**
