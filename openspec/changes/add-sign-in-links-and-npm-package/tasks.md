@@ -18,7 +18,7 @@
 ## 3. npm package
 
 - [x] 3.1 `package.json`, `.gitignore`: metadata, `prepack`, `prepublishOnly`, `files`.
-- [x] 3.2 `README.md`: install from npm, written just before the first publish so the npm page shows it.
+- [x] 3.2 `README.md`: install from npm as `@lfg-labs/t3-watch`, written just before the first publish so the npm page shows it.
 
 ## 4. Review follow-ups
 

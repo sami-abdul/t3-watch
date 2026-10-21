@@ -18,7 +18,8 @@ leaves `t3-watch` off the PATH.
   it stays on the tailnet address. A loopback bind that fails is logged, not fatal.
 - **npm package.** Package metadata, a `prepack` build and a checked `files` list, so the packed
   tarball runs after `npm install -g`. Verified by installing the packed tarball into a scratch
-  prefix. Publishing waits for an npm login, and the README moves to npm after the first publish.
+  prefix. It publishes as `@lfg-labs/t3-watch`, since npm refuses the unscoped name as too similar
+  to `tsc-watch`, and the command stays `t3-watch`. The README moves to npm with the first publish.
 
 ## Capabilities
 

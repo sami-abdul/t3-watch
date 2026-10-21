@@ -14,7 +14,7 @@ own clock without spending model tokens, and wakes your agent only when somethin
 Watch needs Node 24 or newer, on a machine that stays on.
 
 ```sh
-npm install -g t3-watch
+npm install -g @lfg-labs/t3-watch
 t3-watch install
 ```
 
