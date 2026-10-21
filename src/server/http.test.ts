@@ -6,6 +6,9 @@ import { makeHttpServer } from "./http.ts";
 import { makeSignInCode, startSession } from "./signin.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
+/** A heartbeat ping token for tests, not a secret. */
+const PING_TOKEN = "abcdefghijklmnop1234"; // gitleaks:allow
+
 const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "test-token-123", roots: [], publicUrl: null };
 const servers: Array<{ close: () => void }> = [];
 afterEach(() => {
@@ -109,10 +112,10 @@ describe("http", () => {
   it("accepts heartbeats without the token but only for known checks", async () => {
     const { base, watch } = await serve();
     watch.defineCheck(
-      { id: "h", serviceId: "s", kind: "heartbeat", intent: "x", config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "user" },
+      { id: "h", serviceId: "s", kind: "heartbeat", intent: "x", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "user" },
       "on",
     );
-    expect((await fetch(`${base}/hb/abcdefghijklmnop1234`, { method: "POST" })).status).toBe(200);
+    expect((await fetch(`${base}/hb/${PING_TOKEN}`, { method: "POST" })).status).toBe(200);
     expect(watch.store.lastHeartbeat("h", "success")).not.toBeNull();
     expect((await fetch(`${base}/hb/zzzzzzzzzzzzzzzzzzzz`)).status).toBe(404);
   });
@@ -120,7 +123,7 @@ describe("http", () => {
   it("edits, deletes and restores checks for a browser on the page only", async () => {
     const { base, watch } = await serve();
     watch.defineCheck(
-      { id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      { id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
       "on",
     );
     const cookie = `t3w=${startSession(watch.store, watch.deps.now())}`;
@@ -140,11 +143,11 @@ describe("http", () => {
     expect(((await refused.json()) as { error: string }).error).toBe("period is not a setting of a heartbeat check. It has periodSeconds, graceSeconds.");
     // A deleted heartbeat's ping address stops answering until it is restored.
     expect((await post("delete", page)).status).toBe(200);
-    expect((await fetch(`${base}/hb/abcdefghijklmnop1234`)).status).toBe(404);
+    expect((await fetch(`${base}/hb/${PING_TOKEN}`)).status).toBe(404);
     expect((await post("edit", page, { intent: "x", cadenceMinutes: 10 })).status).toBe(409);
     expect((await post("restore", page)).status).toBe(200);
     expect(watch.store.check("h")!.state).toBe("paused");
-    expect((await fetch(`${base}/hb/abcdefghijklmnop1234`)).status).toBe(200);
+    expect((await fetch(`${base}/hb/${PING_TOKEN}`)).status).toBe(200);
     expect((await fetch(`${base}/api/checks/nope/delete`, { method: "POST", headers: page })).status).toBe(404);
   });
 });

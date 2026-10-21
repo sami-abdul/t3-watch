@@ -7,6 +7,9 @@ import type { Scan } from "./scan.ts";
 import { readState } from "./state.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
 
+/** A heartbeat ping token for tests, not a secret. */
+const PING_TOKEN = "abcdefghijklmnop1234"; // gitleaks:allow
+
 /** An edit from a form opened on the check as it stands now. */
 const editCheck = (watch: ReturnType<typeof testWatch>, id: string, edit: CheckEdit) =>
   editAt(watch, id, { updatedAt: watch.store.check(id)?.updatedAt, ...edit });
@@ -58,7 +61,7 @@ describe("editing a check", () => {
   it("leaves a check alone when nothing changed, whatever order its settings came in", () => {
     const { watch } = setup();
     watch.defineCheck(
-      { id: "hb", serviceId: "custom:jobs", kind: "heartbeat", intent: "Backup pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      { id: "hb", serviceId: "custom:jobs", kind: "heartbeat", intent: "Backup pings", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
       "paused",
     );
     const before = watch.store.check("hb")!;
@@ -70,11 +73,11 @@ describe("editing a check", () => {
   it("keeps a heartbeat's ping token, which the page never sends", () => {
     const { watch } = setup();
     watch.defineCheck(
-      { id: "hb", serviceId: "custom:jobs", kind: "heartbeat", intent: "Backup pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      { id: "hb", serviceId: "custom:jobs", kind: "heartbeat", intent: "Backup pings", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
       "on",
     );
     const edited = editCheck(watch, "hb", { intent: "Backup pings", cadenceMinutes: 5, config: { periodSeconds: 7200, token: "zzzzzzzzzzzzzzzzzzzz" } });
-    expect(edited.config).toEqual({ token: "abcdefghijklmnop1234", periodSeconds: 7200, graceSeconds: 300 });
+    expect(edited.config).toEqual({ token: PING_TOKEN, periodSeconds: 7200, graceSeconds: 300 });
   });
 
   it("refuses settings the kind does not have or cannot take, and changes nothing", () => {

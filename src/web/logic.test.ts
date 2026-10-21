@@ -4,6 +4,9 @@ import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import { accessRows, alertSteps, alertsNotice, applyChanges, canDelete, canEdit, editFormOf, editOf, isNewCheck, latestAlertResult, needsHandover, newChecksToReview, productGroups, productsOf, productSummary, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
+/** A heartbeat ping token for tests, not a secret. */
+const PING_TOKEN = "abcdefghijklmnop1234"; // gitleaks:allow
+
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
   roots: ["/r"],
@@ -296,8 +299,8 @@ describe("Edit and Delete", () => {
     });
     // A cadence that is not whole minutes shows as it is, and goes back unchanged.
     expect(editFormOf(check({ cadenceSeconds: 90 })).minutes).toBe("1.5");
-    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300, config: { token: "abcdefghijklmnop1234", periodSeconds: 3600 } }));
-    expect(ping.settings).not.toContain("abcdefghijklmnop1234");
+    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300, config: { token: PING_TOKEN, periodSeconds: 3600 } }));
+    expect(ping.settings).not.toContain(PING_TOKEN);
     expect(JSON.parse(ping.settings!)).toEqual({ periodSeconds: 3600 });
     expect(editFormOf(check({ kind: "vendor", config: { vendor: "stripe", check: "key" } })).settings).toBeNull();
     // A kind from another build of Watch keeps its settings out of the form, so a rename still saves.

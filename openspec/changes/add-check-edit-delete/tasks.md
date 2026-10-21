@@ -8,9 +8,10 @@
 - [x] 1.2 `src/server/http.ts`, `src/server/http.test.ts`: the edit, delete and restore routes,
       for a signed-in browser on the page only; a deleted heartbeat's ping address stops answering.
 - [x] 1.3 `src/server/scan.ts`, `src/server/scan.test.ts`, `src/server/state.ts`,
-      `src/server/drafts.ts`, `src/server/mcp.ts`, `src/server/notices.ts`: a rescan skips deleted
-      checks, even one deleted while it runs, and keeps edited ones; the review and apply leave
-      deleted checks out; a draft never reuses a deleted check's id, and no note lands on one.
+      `src/server/drafts.ts`, `src/server/mcp.ts`, `src/server/notices.ts`, `src/server/alerts.ts`:
+      a rescan skips deleted checks, even one deleted while it runs, and keeps edited ones; the
+      review and apply leave deleted checks out; their unsent changes wait; a draft never reuses
+      a deleted check's id, and no note lands on one.
 
 ## 2. The page
 

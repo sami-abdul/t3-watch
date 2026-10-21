@@ -41,6 +41,6 @@ None.
 New `src/server/edits.ts` and `src/server/edits.test.ts`. Changed: `src/server/store.ts`,
 `src/server/app.ts`, `src/server/extend.ts`, `src/server/http.ts`, `src/server/http.test.ts`,
 `src/server/scan.ts`, `src/server/scan.test.ts`, `src/server/state.ts`, `src/server/drafts.ts`,
-`src/server/mcp.ts`, `src/server/notices.ts`, `src/web/client.ts`, `src/web/app-entry.tsx`,
+`src/server/mcp.ts`, `src/server/notices.ts`, `src/server/alerts.ts`, `src/web/client.ts`, `src/web/app-entry.tsx`,
 `src/web/App.tsx`, `src/web/Details.tsx`, `src/web/logic.ts`, `src/web/logic.test.ts` and
 `README.md`. No migration: deleted is a new value of the existing state column.
