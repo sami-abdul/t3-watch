@@ -19,6 +19,6 @@
 - [x] 3.1 Tests, typecheck, build and `openspec validate add-turn-on-review --strict`.
 - [x] 3.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 9, 10 and 10; 28 fixed, 1 declined as a follow-up in `.wattson/decisions.md`.
-- [ ] 3.3 In a browser on a scratch Watch: the review shows targets, Watch these lists what it
+- [x] 3.3 In a browser on a scratch Watch: the review shows targets, Watch these lists what it
       turns on first, and Back changes nothing; the live Watch restarts briefly with its alert
       settings intact and 22 of 22 checks passing.
