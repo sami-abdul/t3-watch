@@ -26,7 +26,7 @@ export const fakeDeps = (options: {
     if (options.fetch === undefined) throw new Error("network disabled in tests");
     return options.fetch(url, init);
   }) as typeof fetch;
-  const deps: Deps = { run, fetch: fetchImpl, now: () => clock };
+  const deps: Deps = { run, fetch: fetchImpl, now: () => clock, monotonic: () => clock.getTime() };
   return {
     deps,
     calls,
@@ -36,6 +36,9 @@ export const fakeDeps = (options: {
     },
   };
 };
+
+/** A fetch failure as Node's fetch gives it: "fetch failed", with the reason and its code in the cause. */
+export const fetchFailed = (code: string, message = code) => new TypeError("fetch failed", { cause: Object.assign(new Error(message), { code }) });
 
 export const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

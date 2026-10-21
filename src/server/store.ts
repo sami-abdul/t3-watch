@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
+import type { HoldReason } from "./connectivity.ts";
 import { type PendingRun, pendingText } from "./pending.ts";
 
 export type Outcome = "pass" | "fail" | "unknown";
@@ -411,8 +412,9 @@ export const openStore = (file: string) => {
       return toEvent(one("SELECT * FROM events WHERE id = ?", Number(info.lastInsertRowid))!);
     },
     /**
-     * Keeps a run Watch held while it could not reach the internet. The check keeps its last
-     * result and no event is made; only its next run time moves.
+     * Keeps a run Watch held while it could not reach the internet, or while its link was slow and
+     * the failure was one a slow link explains. The check keeps its last result and no event is
+     * made; only its next run time moves.
      */
     recordHeld: (
       checkId: string,
@@ -420,9 +422,11 @@ export const openStore = (file: string) => {
       at: string,
       durationMs: number,
       nextRunAt: string,
+      why: HoldReason = "offline",
     ) => {
-      const summary = `Held while Watch could not reach the internet: ${result.summary}`.slice(0, 300);
-      setAside(checkId, at, "unknown", summary, { ...result.evidence, held: true }, durationMs, nextRunAt);
+      const reason = why === "slow" ? "Held while Watch's connection was slow" : "Held while Watch could not reach the internet";
+      const summary = `${reason}: ${result.summary}`.slice(0, 300);
+      setAside(checkId, at, "unknown", summary, { ...result.evidence, held: true, ...(why === "slow" ? { slow: true } : {}) }, durationMs, nextRunAt);
     },
     /**
      * Keeps a non-passing run that waits for a second one before the check fails. The check keeps
@@ -453,6 +457,9 @@ export const openStore = (file: string) => {
           checkId,
         )?.n ?? 0,
       ),
+    /** Whether the check's latest run was held, so its link may still be slow. */
+    lastRunHeld: (checkId: string) =>
+      one(`SELECT json_extract(evidence, '$.held') AS held FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 1`, checkId)?.held === 1,
     /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
     setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>
       exec(

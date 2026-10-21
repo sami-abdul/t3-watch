@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { answerMs, noAnswer, noAnswerEvidence } from "./network.ts";
 import { type CheckRunner, unknown } from "./types.ts";
 
 export const HttpConfig = z.object({
@@ -10,16 +11,17 @@ export const HttpConfig = z.object({
   contains: z.string().min(1).max(500).optional(),
 });
 
-export const runHttp: CheckRunner = async (check, { deps }) => {
+export const runHttp: CheckRunner = async (check, { deps, patient }) => {
   const parsed = HttpConfig.safeParse(check.config);
   if (!parsed.success) return unknown("The check's settings are invalid");
   const c = parsed.data;
+  const timeoutMs = answerMs(patient);
   const started = Date.now();
   try {
     const response = await deps.fetch(c.url, {
       method: "GET",
       redirect: "follow",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { "user-agent": "t3-watch" },
     });
     const ms = Date.now() - started;
@@ -34,10 +36,13 @@ export const runHttp: CheckRunner = async (check, { deps }) => {
       return { outcome: "fail", summary: `Answered ${response.status} without the expected text`, evidence };
     return { outcome: "pass", summary: `Answered ${response.status} in ${ms} ms`, evidence };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    // A URL nobody can reach is a failure of the thing watched, not of the check.
-    if (/abort|timeout/i.test(message))
-      return { outcome: "fail", summary: "No answer within 15 seconds", evidence: {} };
-    return { outcome: "fail", summary: `Could not connect: ${message.slice(0, 120)}`, evidence: {} };
+    // A URL nobody can reach is a failure of the thing watched, not of the check; the runner holds
+    // it instead while Watch's own link is down or slow, which the evidence lets it tell.
+    const failure = noAnswer(error, timeoutMs);
+    return {
+      outcome: "fail",
+      summary: failure.code === "timeout" ? `No answer within ${timeoutMs / 1000} seconds` : `Could not connect: ${failure.reason}`,
+      evidence: noAnswerEvidence(failure),
+    };
   }
 };

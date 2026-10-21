@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { GitHubConfig } from "./checks/github.ts";
-import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
+import { type CheckContext, runCheck } from "./checks/index.ts";
+import { noAnswer } from "./checks/network.ts";
+import type { Check } from "./store.ts";
+import { fakeDeps, fetchFailed, jsonResponse, testWatch } from "./testkit.ts";
 
 const base = { cadenceSeconds: 300, keyId: null, origin: "user" as const };
 
@@ -135,5 +138,76 @@ describe("check kinds", () => {
     const added = await watch.addKey({ vendor: "pipedrive", value: "pd-wrong-value-123" });
     expect(added.ok).toBe(false);
     expect(watch.keys()).toHaveLength(0);
+  });
+});
+
+describe("requests that get no answer", () => {
+  it("are named in words, with the ones a slow link of Watch's own explains marked", () => {
+    expect(noAnswer(fetchFailed("UND_ERR_CONNECT_TIMEOUT", "Connect Timeout Error"), 15_000)).toEqual({
+      reason: "the connection timed out",
+      code: "UND_ERR_CONNECT_TIMEOUT",
+      link: true,
+    });
+    expect(noAnswer(fetchFailed("ECONNRESET", "read ECONNRESET"), 15_000)).toMatchObject({ reason: "the connection was reset", link: true });
+    expect(noAnswer(fetchFailed("EAI_AGAIN", "getaddrinfo EAI_AGAIN x.test"), 15_000)).toMatchObject({ reason: "the name lookup did not finish", link: true });
+    // The site's own failures are not the link's.
+    expect(noAnswer(fetchFailed("ECONNREFUSED", "connect ECONNREFUSED 192.0.2.1:443"), 15_000)).toMatchObject({ reason: "the server refused the connection", link: false });
+    // A lookup that failed for want of a connection reads as a missing name on macOS and Windows.
+    expect(noAnswer(fetchFailed("ENOTFOUND", "getaddrinfo ENOTFOUND x.test"), 15_000)).toMatchObject({ reason: "the name could not be found", link: true });
+    expect(noAnswer(fetchFailed("CERT_HAS_EXPIRED", "certificate has expired"), 15_000)).toEqual({
+      reason: "certificate has expired",
+      code: "CERT_HAS_EXPIRED",
+      link: false,
+    });
+    // Every address failing at once comes as each one's error together, under the first's code.
+    const everyAddress = (...codes: Array<string>) =>
+      new TypeError("fetch failed", {
+        cause: Object.assign(new AggregateError(codes.map((code) => Object.assign(new Error(`connect ${code}`), { code }))), { code: codes[0] }),
+      });
+    expect(noAnswer(everyAddress("ETIMEDOUT", "ENETUNREACH"), 15_000)).toMatchObject({ reason: "the connection timed out", code: "ETIMEDOUT", link: true });
+    // An address that refused is the site answering, whichever address timed out first.
+    expect(noAnswer(everyAddress("ETIMEDOUT", "ECONNREFUSED"), 15_000)).toMatchObject({ reason: "the server refused the connection", code: "ECONNREFUSED", link: false });
+    // The check's own deadline, and a failure with no reason at all, which stays the site's.
+    expect(noAnswer(new DOMException("The operation was aborted due to timeout", "TimeoutError"), 45_000)).toEqual({
+      reason: "no answer within 45 seconds",
+      code: "timeout",
+      link: true,
+    });
+    expect(noAnswer(new TypeError("fetch failed"), 15_000)).toEqual({ reason: "the request could not be made", code: null, link: false });
+    // An error about the request itself may quote a header, and so a key, which is never shown.
+    const quoted = noAnswer(new TypeError('Headers.append: "Bearer my-vendor-key-value" is an invalid header value.'), 15_000);
+    expect(quoted).toEqual({ reason: "the request could not be made", code: null, link: false });
+  });
+
+  it("show in the HTTP and vendor checks' results, which wait longer after a held run", async () => {
+    let failure: unknown = null;
+    const { deps } = fakeDeps({
+      fetch: () => {
+        if (failure !== null) throw failure;
+        return jsonResponse(200, { data: { company_id: 7 } });
+      },
+    });
+    const watch = testWatch(deps);
+    const added = await watch.addKey({ vendor: "pipedrive", value: "pd-secret-value-123" });
+    if (!added.ok) throw new Error(added.summary);
+    const site = watch.defineCheck({ ...base, id: "site", serviceId: "s", kind: "http", intent: "x", config: { url: "https://x.test/" } }, "on");
+    const vendor = watch.defineCheck({ ...base, id: "v", serviceId: "s", kind: "vendor", intent: "x", keyId: added.key.id, config: { vendor: "pipedrive", check: "key" } }, "on");
+    const context: CheckContext = { deps, store: watch.store, keyring: watch.keyring, vendors: () => watch.vendors() };
+    const run = (check: Check, patient = false) => runCheck(check, { ...context, patient });
+    failure = fetchFailed("UND_ERR_CONNECT_TIMEOUT", "Connect Timeout Error");
+    expect(await run(site)).toEqual({
+      outcome: "fail",
+      summary: "Could not connect: the connection timed out",
+      evidence: { connection: "UND_ERR_CONNECT_TIMEOUT", link: true },
+    });
+    expect(await run(vendor)).toEqual({
+      outcome: "unknown",
+      summary: "Could not reach Pipedrive: the connection timed out",
+      evidence: { connection: "UND_ERR_CONNECT_TIMEOUT", link: true },
+    });
+    failure = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect((await run(site)).summary).toBe("No answer within 15 seconds");
+    expect((await run(site, true)).summary).toBe("No answer within 45 seconds");
+    expect((await run(vendor, true)).summary).toBe("Pipedrive did not answer within 45 seconds");
   });
 });

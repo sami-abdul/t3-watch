@@ -114,10 +114,21 @@ and the Watch thread's status say when Watch lost its connection. Heartbeats and
 machine are never held, and a check's failures are held for at most an hour of its runs in a row,
 in case the probe addresses are what is blocked.
 
+A slow link gets the same care. When a web or vendor check's connection to a public site times
+out, drops or cannot finish its name lookup, Watch times its probe. One that takes
+a second or more, or 400 ms or more while two or more sites newly fail that way within two
+minutes, means Watch's own link is slow, and the failure is held like an offline one. A refused
+connection, a bad certificate, an HTTP answer, GitHub and AWS checks, and checks on your own
+network, by address or by a name such as nas or fritz.box, still count. A check's next run after a held one waits 45 seconds for an answer instead
+of 15. Home and the Watch thread's status say when the connection turned slow; the spell ends when
+a probe or a request answers within 400 ms, or a probe no longer shows it slow.
+
 If your network blocks those two addresses, list ones it allows as `probeUrls` in
 `~/.t3-watch/config.json` and restart Watch. An empty list turns holding off. Watch notices a
 blocked list on its own: when the addresses fail twice in an hour right after a check reached the
-internet, it stops holding and says so on Home until one of them answers or Watch restarts.
+internet, it stops holding and says so on Home until one of them answers or Watch restarts. A
+web request that had just taken longer than the probes wait is the exception: then the link is
+slow, not the list blocked.
 
 ## Vendors
 

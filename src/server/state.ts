@@ -1,7 +1,7 @@
 import { alertHost, alertSettings, lastAlertDelivery, lastAlertTest } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
-import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "./notices.ts";
+import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
 import type { Check } from "./store.ts";
 import { cadenceOf, targetsOf } from "./targets.ts";
@@ -120,6 +120,8 @@ export const homeText = (state: WatchState) => {
     lines.unshift(
       `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. ${HELD_NOTICE}`,
     );
+  if (state.link.slowSince !== null)
+    lines.unshift(`Watch's connection has been slow since ${state.link.slowSince.slice(0, 16).replace("T", " ")} UTC. ${SLOW_NOTICE}`);
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));
   const checkingAgain = on.filter((c) => c.pending !== null);

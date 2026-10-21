@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
+import { ANSWER_MS, noAnswer, noAnswerEvidence } from "./checks/network.ts";
 import type { CheckResult } from "./checks/types.ts";
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/);
@@ -151,6 +152,7 @@ export const vendorGet = async (
   path: string,
   params: Readonly<Record<string, string>> | undefined,
   fetchImpl: typeof fetch,
+  timeoutMs = ANSWER_MS,
 ): Promise<VendorReply> => {
   if (vendor.api === undefined || vendor.key === undefined)
     throw new Error(`${vendor.label} has no API description`);
@@ -166,7 +168,7 @@ export const vendorGet = async (
     method: "GET",
     headers,
     redirect: "manual",
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
   let body: unknown = null;
@@ -185,13 +187,14 @@ export const runKeyCheck = async (
   vendor: Vendor,
   key: string,
   fetchImpl: typeof fetch,
+  timeoutMs = ANSWER_MS,
 ): Promise<CheckResult & { account: string | null }> => {
   const keyCheck = vendor.keyCheck!;
   try {
-    let reply = await vendorGet(vendor, key, keyCheck.path, keyCheck.query, fetchImpl);
+    let reply = await vendorGet(vendor, key, keyCheck.path, keyCheck.query, fetchImpl, timeoutMs);
     if (reply.status === 403)
       for (const path of keyCheck.fallbacks ?? []) {
-        reply = await vendorGet(vendor, key, path, undefined, fetchImpl);
+        reply = await vendorGet(vendor, key, path, undefined, fetchImpl, timeoutMs);
         if (reply.status < 300) break;
       }
     if (reply.status >= 200 && reply.status < 300) {
@@ -218,7 +221,7 @@ export const runKeyCheck = async (
       account: null,
     };
   } catch (error) {
-    return { outcome: "unknown", summary: errorText(vendor, error), evidence: {}, account: null };
+    return { outcome: "unknown", ...errorText(vendor, error, timeoutMs), account: null };
   }
 };
 
@@ -229,9 +232,10 @@ export const runFreshCheck = async (
   key: string,
   fetchImpl: typeof fetch,
   now: Date,
+  timeoutMs = ANSWER_MS,
 ): Promise<CheckResult> => {
   try {
-    const reply = await vendorGet(vendor, key, check.path, check.query, fetchImpl);
+    const reply = await vendorGet(vendor, key, check.path, check.query, fetchImpl, timeoutMs);
     if (rejected(reply.status))
       return {
         outcome: "fail",
@@ -255,7 +259,7 @@ export const runFreshCheck = async (
       ? { outcome: "pass", summary: `Latest ${describeAge(age)} ago`, evidence: { newestAt } }
       : { outcome: "fail", summary: `Nothing new for ${describeAge(age)}`, evidence: { newestAt } };
   } catch (error) {
-    return { outcome: "unknown", summary: errorText(vendor, error), evidence: {} };
+    return { outcome: "unknown", ...errorText(vendor, error, timeoutMs) };
   }
 };
 
@@ -266,9 +270,16 @@ export const describeAge = (seconds: number) => {
   return `${Math.round(seconds / 86400)} days`;
 };
 
-const errorText = (vendor: Vendor, error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/abort|timeout/i.test(message)) return `${vendor.label} did not answer in time`;
-  if (/Refused/.test(message)) return message;
-  return `Could not reach ${vendor.label}`;
+/**
+ * Why a vendor request failed. Watch's own refusals say what they are; fetch's failures get their
+ * reason in words and the mark the runner reads to hold them while Watch's link is slow.
+ */
+const errorText = (vendor: Vendor, error: unknown, timeoutMs: number): Pick<CheckResult, "summary" | "evidence"> => {
+  // Watch's own refusals, such as a request outside the vendor's API, say what they are.
+  if (error instanceof Error && !(error instanceof TypeError) && error.name !== "TimeoutError") return { summary: error.message, evidence: {} };
+  const failure = noAnswer(error, timeoutMs);
+  return {
+    summary: failure.code === "timeout" ? `${vendor.label} did not answer within ${timeoutMs / 1000} seconds` : `Could not reach ${vendor.label}: ${failure.reason}`,
+    evidence: noAnswerEvidence(failure),
+  };
 };

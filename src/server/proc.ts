@@ -51,5 +51,10 @@ export interface Deps {
   readonly run: RunProc;
   readonly fetch: typeof fetch;
   readonly now: () => Date;
+  /** Milliseconds for timing, which a clock set back or forward does not move; `now` stands in without it. */
+  readonly monotonic?: () => number;
 }
-export const liveDeps: Deps = { run: runProc, fetch: globalThis.fetch, now: () => new Date() };
+export const liveDeps: Deps = { run: runProc, fetch: globalThis.fetch, now: () => new Date(), monotonic: () => performance.now() };
+
+/** Milliseconds on the steady clock, or on the wall clock where there is none, as in a test's deps. */
+export const steadyClock = (deps: Deps) => deps.monotonic ?? (() => deps.now().getTime());

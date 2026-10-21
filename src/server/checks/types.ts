@@ -13,6 +13,8 @@ export interface CheckContext {
   readonly store: Store;
   readonly keyring: Keyring;
   readonly vendors: () => ReadonlyMap<string, Vendor>;
+  /** Wait longer for an answer: the check's last run was held, so its link may still be slow. */
+  readonly patient?: boolean;
 }
 export type CheckRunner = (check: Check, context: CheckContext) => Promise<CheckResult>;
 

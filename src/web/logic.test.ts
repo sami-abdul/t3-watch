@@ -44,7 +44,7 @@ const check = (over: Partial<CheckView>): CheckView => ({
 });
 const state = (over: Partial<WatchState>): WatchState => ({
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
-  alerts: { on: false, host: null, signed: false, lastTest: null, lastDelivery: null }, setup: { scan: null, status: { running: false, step: null, error: null } }, link: { offlineSince: null, probesDisagree: false }, vendors: [], ...over,
+  alerts: { on: false, host: null, signed: false, lastTest: null, lastDelivery: null }, setup: { scan: null, status: { running: false, step: null, error: null } }, link: { offlineSince: null, probesDisagree: false, slowSince: null }, vendors: [], ...over,
 });
 
 describe("review", () => {

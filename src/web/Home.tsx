@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "../server/notices.ts";
+import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "../server/notices.ts";
 import { pendingText } from "../server/pending.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import type { WatchClient } from "./client.ts";
@@ -90,6 +90,12 @@ export function Home({
       {state.link.offlineSince !== null ? (
         <Muted className="text-foreground">
           Watch lost its internet connection {ago(state.link.offlineSince, now)}. {HELD_NOTICE}
+        </Muted>
+      ) : null}
+      {/* Truthy, not just set: a page newer than the service it talks to gets no such field. */}
+      {state.link.slowSince ? (
+        <Muted className="text-foreground">
+          Watch's connection turned slow {ago(state.link.slowSince, now)}. {SLOW_NOTICE}
         </Muted>
       ) : null}
       {state.link.probesDisagree ? (

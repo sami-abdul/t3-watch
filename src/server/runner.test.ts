@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { makeWatch } from "./app.ts";
 import { homeText, readState } from "./state.ts";
 import type { ChangeEvent } from "./store.ts";
-import { fakeDeps, testWatch } from "./testkit.ts";
+import { fakeDeps, fetchFailed, testWatch } from "./testkit.ts";
 
 describe("runner", () => {
   it("runs due checks, records runs and emits one event per change", async () => {
@@ -442,7 +442,7 @@ describe("runner while Watch is offline", () => {
       expect(watch.store.check("site")!.lastOutcome).toBe("pass");
       await watch.setCheck("other", "run");
     }
-    expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true });
+    expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true, slowSince: null });
     expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in Watch's config\.json/);
     // No longer held: the next two failing runs fail the site and alert.
     fake.advance(61);
@@ -531,5 +531,297 @@ describe("runner while Watch is offline", () => {
     await watch.runner.tick();
     expect(watch.store.check("hb")!.lastOutcome).toBe("fail");
     expect(watch.store.events().some((e) => e.checkId === "hb" && e.to === "fail")).toBe(true);
+  });
+});
+
+const OTHER = "https://other.example/";
+
+/**
+ * A Watch with one probe address that answers after `net.probeMs` on the fake clock, and two
+ * sites that each answer, time out, refuse or say 503, with an HTTP check on each.
+ */
+const slowSetup = () => {
+  type Site = "up" | "timeout" | "no answer" | "refused" | "down";
+  const net = { probeMs: 100, site: "up" as Site, other: "up" as Site };
+  const fake = fakeDeps({
+    fetch: async (url) => {
+      if (url.hostname === "probe.test") {
+        // After the checks that fail together have failed, as a real probe would.
+        await new Promise((resolve) => setImmediate(resolve));
+        fake.advance(net.probeMs / 1000);
+        return new Response(null, { status: 204 });
+      }
+      // A router at home answers at once, whatever the internet does.
+      if (url.hostname === "fritz.box") return new Response("ok");
+      const state = url.href === OTHER ? net.other : net.site;
+      if (state === "timeout") throw fetchFailed("UND_ERR_CONNECT_TIMEOUT", "Connect Timeout Error");
+      if (state === "no answer") throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      if (state === "refused") throw fetchFailed("ECONNREFUSED", "connect ECONNREFUSED 192.0.2.1:443");
+      return state === "down" ? new Response("down", { status: 503 }) : new Response("ok");
+    },
+  });
+  const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps, probeUrls: () => ["https://probe.test/"] });
+  const check = (id: string, url: string, cadenceSeconds = 300) =>
+    watch.defineCheck({ id, serviceId: "s", kind: "http", intent: `${id} answers`, config: { url }, keyId: null, cadenceSeconds, origin: "user" }, "on");
+  check("site", SITE);
+  return { watch, net, check, advance: fake.advance };
+};
+
+describe("runner while Watch's link is slow", () => {
+  it("holds a connection failure while the probe answers slowly, then waits longer on the next run", async () => {
+    const { watch, net, advance } = slowSetup();
+    await watch.runner.tick();
+    net.site = "timeout";
+    net.probeMs = 2000;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    expect(watch.store.events()).toEqual([]);
+    expect(watch.store.runs("site")[0]!.summary).toBe("Held while Watch's connection was slow: Could not connect: the connection timed out");
+    expect(watch.link().slowSince).not.toBeNull();
+    expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's connection has been slow since .+ UTC\. Web and vendor checks whose connections time out or drop are held/);
+    // The next run waits 45 seconds rather than 15, and is held again while the link stays slow.
+    net.site = "no answer";
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toBe("Held while Watch's connection was slow: No answer within 45 seconds");
+    // The link recovers and the site answers: nothing was ever wrong, and nothing alerted.
+    net.site = "up";
+    net.probeMs = 100;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    expect(watch.store.events()).toEqual([]);
+    expect(watch.link().slowSince).toBeNull();
+    // Patience ends with the streak: a run after a counted one waits 15 seconds again.
+    net.site = "no answer";
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toBe("Failed once, checking again: No answer within 15 seconds");
+  });
+
+  it("counts what a slow link does not explain, and a connection failure on a quick link", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("other", OTHER);
+    await watch.runner.tick();
+    // A refusal comes from the site, even while the other site's timeout shows the link is slow.
+    net.site = "refused";
+    net.other = "timeout";
+    net.probeMs = 2000;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.link().slowSince).not.toBeNull();
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.link().slowSince).not.toBeNull();
+    expect(watch.store.check("site")!.lastSummary).toBe("Could not connect: the server refused the connection");
+    expect(watch.store.events().map((e) => `${e.checkId}: ${e.from} -> ${e.to}`)).toEqual(["site: pass -> fail"]);
+    expect(watch.store.runs("other")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+    // A timeout on a quick link is the site's too.
+    const quick = slowSetup();
+    await quick.watch.runner.tick();
+    quick.net.site = "timeout";
+    quick.advance(301);
+    await quick.watch.runner.tick();
+    quick.advance(61);
+    await quick.watch.runner.tick();
+    expect(quick.watch.store.check("site")!.lastOutcome).toBe("fail");
+    expect(quick.watch.link().slowSince).toBeNull();
+  });
+
+  it("holds failures on two hosts at once while the probe is only a little slow", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("other", OTHER);
+    await watch.runner.tick();
+    net.site = "timeout";
+    net.other = "timeout";
+    net.probeMs = 500;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+    expect(watch.store.runs("other")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+    expect(watch.store.events()).toEqual([]);
+  });
+
+  it("holds a slow link's failures for at most an hour in a row, then counts them with patience only after a held run", async () => {
+    const { watch, net, advance } = slowSetup();
+    await watch.runner.tick();
+    net.site = "no answer";
+    net.probeMs = 2000;
+    for (let i = 0; i < 12; i++) {
+      advance(301);
+      await watch.runner.tick();
+    }
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    // The first held run waited 15 seconds, the ones after it 45. Runs come newest first.
+    const held = watch.store.runs("site").map((r) => r.summary);
+    expect([held[11], held[0]]).toEqual([
+      "Held while Watch's connection was slow: No answer within 15 seconds",
+      "Held while Watch's connection was slow: No answer within 45 seconds",
+    ]);
+    // Past the cap the run is pending, after a held run so with patience; the next one has none.
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toBe("Failed once, checking again: No answer within 45 seconds");
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.store.check("site")).toMatchObject({ lastOutcome: "fail", lastSummary: "No answer within 15 seconds" });
+    expect(watch.store.events().map((e) => `${e.from} -> ${e.to}`)).toEqual(["pass -> fail"]);
+  });
+
+  it("holds a confirming run and another host's first failure that land in one batch", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("other", OTHER, 60);
+    await watch.runner.tick();
+    // The site fails alone on a link only a little slow: pending, as before.
+    net.site = "timeout";
+    net.probeMs = 500;
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toBe("Failed once, checking again: Could not connect: the connection timed out");
+    // Its confirming run and the other site's first failure come together: both are held.
+    net.other = "timeout";
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+    expect(watch.store.runs("other")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+    expect(watch.store.events()).toEqual([]);
+  });
+
+  it("still finds out a probe list a firewall drops, when checks pass quicker than the probes wait", async () => {
+    const fake = fakeDeps({
+      fetch: async (url) => {
+        if (url.hostname === "probe.test") {
+          fake.advance(5);
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        }
+        if (url.href === OTHER) return new Response("down", { status: 503 });
+        fake.advance(1.5);
+        return new Response("ok");
+      },
+    });
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps, probeUrls: () => ["https://probe.test/"] });
+    for (const [id, url] of [["site", SITE], ["other", OTHER]] as const)
+      watch.defineCheck({ id, serviceId: "s", kind: "http", intent: id, config: { url }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    watch.store.setTrialResult("other", "pass", "Answered 200", watch.now());
+    for (let round = 0; round < 4; round++) {
+      await watch.runner.tick();
+      fake.advance(301);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    // A request that took 1.5 seconds cannot explain probes that waited 5: the list is in doubt, and holding stops.
+    expect(watch.link().probesDisagree).toBe(true);
+    expect(watch.store.events().map((e) => `${e.checkId}: ${e.from} -> ${e.to}`)).toEqual(["other: pass -> fail"]);
+  });
+
+  it("does not doubt the probe list when its probes time out right after a web request passed slower than they waited", async () => {
+    const fake = fakeDeps({
+      fetch: async (url) => {
+        if (url.hostname === "probe.test") {
+          fake.advance(5);
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        }
+        if (url.href === OTHER) throw fetchFailed("UND_ERR_CONNECT_TIMEOUT", "Connect Timeout Error");
+        // The site answers, after 8 seconds, as on a link with a round trip of about two seconds.
+        fake.advance(8);
+        return new Response("ok");
+      },
+    });
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps, probeUrls: () => ["https://probe.test/"] });
+    for (const [id, url] of [["site", SITE], ["other", OTHER]] as const)
+      watch.defineCheck({ id, serviceId: "s", kind: "http", intent: id, config: { url }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    watch.store.setTrialResult("other", "pass", "Answered 200", watch.now());
+    for (let round = 0; round < 4; round++) {
+      await watch.runner.tick();
+      fake.advance(301);
+      // Let the recheck a pass set off finish, as the next tick would.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(watch.link().probesDisagree).toBe(false);
+    expect(watch.store.events()).toEqual([]);
+    expect(watch.store.runs("other").every((r) => r.summary.startsWith("Held while"))).toBe(true);
+  });
+
+  it("does not let a pass from earlier in the batch outrank a probe a failure sets off", async () => {
+    const fake = fakeDeps({
+      fetch: async (url) => {
+        if (url.hostname === "probe.test") throw new TypeError("fetch failed");
+        if (url.href === OTHER) return new Response("ok");
+        throw fetchFailed("UND_ERR_CONNECT_TIMEOUT", "Connect Timeout Error");
+      },
+    });
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps, probeUrls: () => ["https://probe.test/"] });
+    for (const [id, url] of [["site", SITE], ["other", OTHER]] as const)
+      watch.defineCheck({ id, serviceId: "s", kind: "http", intent: id, config: { url }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    watch.store.setTrialResult("site", "pass", "Answered 200", watch.now());
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch could not reach the internet/);
+  });
+
+  it("does not hold a check on the local network for a slow internet link, nor let its quick pass end the spell", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("nas", "https://192.168.1.20/");
+    check("named", "http://nas:8080/");
+    check("router", "http://fritz.box/");
+    await watch.runner.tick();
+    net.site = "timeout";
+    net.probeMs = 2000;
+    advance(301);
+    await watch.runner.tick();
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.store.check("nas")).toMatchObject({ lastOutcome: "fail", lastSummary: "Could not connect: the connection timed out" });
+    expect(watch.store.check("named")).toMatchObject({ lastOutcome: "fail", lastSummary: "Could not connect: the connection timed out" });
+    // The router answers in no time, as it does whatever the internet does; the spell goes on.
+    expect(watch.store.check("router")!.lastOutcome).toBe("pass");
+    expect(watch.link().slowSince).not.toBeNull();
+  });
+
+  it("records the rest of a batch when one run throws", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("other", OTHER);
+    const lastRunHeld = watch.store.lastRunHeld;
+    Object.assign(watch.store, {
+      lastRunHeld: (id: string) => {
+        if (id === "other") throw new Error("disk I/O error");
+        return lastRunHeld(id);
+      },
+    });
+    const errors: Array<unknown> = [];
+    const log = console.error;
+    console.error = (...args: Array<unknown>) => errors.push(args);
+    try {
+      await watch.runner.tick();
+    } finally {
+      console.error = log;
+    }
+    expect(errors).toHaveLength(1);
+    expect(watch.store.check("site")!.lastOutcome).toBe("pass");
+    // The site is not left marked as running: its next run happens.
+    net.site = "down";
+    advance(301);
+    await watch.runner.tick();
+    expect(watch.store.runs("site")[0]!.summary).toBe("Failed once, checking again: Answered 503");
+  });
+
+  it("keeps a failing check's real reason once Watch knows its link is slow", async () => {
+    const { watch, net, check, advance } = slowSetup();
+    check("other", OTHER, 60);
+    net.site = "down";
+    await watch.runner.tick();
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastSummary).toBe("Answered 503");
+    // The other site's failure shows the link is slow before the site runs again.
+    net.site = "timeout";
+    net.other = "timeout";
+    net.probeMs = 2000;
+    advance(61);
+    await watch.runner.tick();
+    expect(watch.link().slowSince).not.toBeNull();
+    advance(250);
+    await watch.runner.tick();
+    expect(watch.store.check("site")!.lastSummary).toBe("Answered 503");
+    expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
   });
 });

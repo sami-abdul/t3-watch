@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PROBE_URLS, heldWhenOffline, makeConnectivity, provesInternet } from "./connectivity.ts";
+import { DEFAULT_PROBE_URLS, heldWhenOffline, makeConnectivity, onTheInternet, provesInternet, siteOf } from "./connectivity.ts";
 import { fakeDeps } from "./testkit.ts";
 
 const setup = (probeUrls?: ReadonlyArray<string>) => {
@@ -15,10 +15,238 @@ const setup = (probeUrls?: ReadonlyArray<string>) => {
   return { link: makeConnectivity(fake.deps, () => probeUrls), net, advance: fake.advance };
 };
 
+/** One probe address that answers after `probe.ms` on the fake clock, or not at all while it is down. */
+const timedSetup = () => {
+  const probe = { ms: 100, up: true, calls: 0 };
+  const fake = fakeDeps({
+    fetch: async () => {
+      probe.calls++;
+      if (!probe.up) throw new TypeError("fetch failed");
+      fake.advance(probe.ms / 1000);
+      return new Response(null, { status: 204 });
+    },
+  });
+  return { link: makeConnectivity(fake.deps, () => ["https://probe.test/"]), probe, advance: fake.advance };
+};
+
+describe("a slow link", () => {
+  it("is a probe that takes a second or more, and holds only failures a slow link explains", async () => {
+    const { link, probe, advance } = timedSetup();
+    expect(await link.hold(true)).toBeNull();
+    expect(link.slow()).toBe(false);
+    probe.ms = 1500;
+    advance(16);
+    expect(await link.hold(true)).toBe("slow");
+    expect(link.link()).toEqual({ offlineSince: null, probesDisagree: false, slowSince: "2026-10-15T10:00:17.600Z" });
+    // A failure a slow link does not explain, such as an HTTP answer, is counted, even now.
+    expect(await link.hold(false)).toBeNull();
+    expect(link.slow()).toBe(true);
+    // A later slow probe keeps the time the spell began, whatever failure set it off.
+    advance(16);
+    expect(await link.hold(false)).toBeNull();
+    advance(29 * 60);
+    expect(link.link().slowSince).toBe("2026-10-15T10:00:17.600Z");
+  });
+
+  it("is a smaller delay too while checks on two hosts newly fail at once", async () => {
+    const { link, probe, advance } = timedSetup();
+    probe.ms = 500;
+    link.failed("a.test");
+    expect(await link.hold(true)).toBeNull();
+    // The same host again is still one host.
+    advance(16);
+    link.failed("a.test");
+    expect(await link.hold(true)).toBeNull();
+    advance(16);
+    link.failed("b.test");
+    expect(await link.hold(true)).toBe("slow");
+    // Two minutes on, those failures no longer count as at once, and the spell ends.
+    advance(150);
+    link.failed("c.test");
+    expect(await link.hold(true)).toBeNull();
+    expect(link.slow()).toBe(false);
+  });
+
+  it("ends on a probe that no longer shows it, a quick pass, going offline, or half an hour without a slow probe", async () => {
+    const { link, probe, advance } = timedSetup();
+    probe.ms = 2000;
+    expect(await link.hold(true)).toBe("slow");
+    // A probe of 700 ms with one failing host is not slow, so the spell ends with it.
+    probe.ms = 700;
+    advance(16);
+    expect(await link.hold(true)).toBeNull();
+    expect(link.link().slowSince).toBeNull();
+    probe.ms = 2000;
+    advance(16);
+    expect(await link.hold(true)).toBe("slow");
+    // A pass that took two seconds says nothing about the link; one within 400 ms ends the spell.
+    void link.sawInternet({ requestMs: 2000 });
+    expect(link.slow()).toBe(true);
+    void link.sawInternet({ requestMs: 150 });
+    expect(link.slow()).toBe(false);
+    advance(16);
+    expect(await link.hold(true)).toBe("slow");
+    // Offline ends it, and coming back does not bring the old spell back.
+    probe.up = false;
+    advance(16);
+    expect(await link.hold(true)).toBe("offline");
+    expect(link.link()).toMatchObject({ offlineSince: "2026-10-15T10:01:10.700Z", slowSince: null });
+    probe.up = true;
+    probe.ms = 100;
+    advance(60);
+    await link.sawInternet({ requestMs: 2500 });
+    expect(link.link()).toMatchObject({ offlineSince: null, slowSince: null });
+    probe.ms = 2000;
+    advance(16);
+    expect(await link.hold(true)).toBe("slow");
+    advance(31 * 60);
+    expect(link.link().slowSince).toBeNull();
+  });
+
+  it("lets a quick pass outrank a slow probe that began before it", async () => {
+    const answers: Array<() => void> = [];
+    const fake = fakeDeps({ fetch: () => new Promise<Response>((resolve) => answers.push(() => resolve(new Response(null, { status: 204 })))) });
+    const link = makeConnectivity(fake.deps, () => ["https://probe.test/"]);
+    const held = link.hold(true);
+    fake.advance(1);
+    void link.sawInternet({ requestMs: 120 });
+    fake.advance(1);
+    for (const answer of answers.splice(0)) answer();
+    expect(await held).toBeNull();
+    expect(link.slow()).toBe(false);
+    // Nor does a slow answer reused from the 15 seconds after it.
+    const again = timedSetup();
+    again.probe.ms = 2000;
+    expect(await again.link.hold(true)).toBe("slow");
+    again.advance(5);
+    void again.link.sawInternet({ requestMs: 150 });
+    again.advance(5);
+    expect(await again.link.hold(true)).toBeNull();
+    expect(again.link.slow()).toBe(false);
+  });
+
+  it("takes probes that all run out of time while a check passes for a link that works, slowly", async () => {
+    const timeouts: Array<() => void> = [];
+    const fake = fakeDeps({
+      fetch: () =>
+        new Promise<Response>((_resolve, reject) => timeouts.push(() => reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")))),
+    });
+    const link = makeConnectivity(fake.deps, () => ["https://probe.test/"]);
+    const held = link.hold(true);
+    // A check finishes passing a second after the probe began, then the probe runs out of time.
+    fake.advance(1);
+    void link.sawInternet({ requestMs: 9000 });
+    fake.advance(4);
+    for (const timeout of timeouts.splice(0)) timeout();
+    expect(await held).toBe("slow");
+    expect(link.link()).toMatchObject({ offlineSince: null, slowSince: "2026-10-15T10:00:05.000Z" });
+  });
+
+  it("counts names on one site once, so two names on one server are not two sites failing", async () => {
+    expect(["app.example.com", "Example.COM.", "a.b.example.co.uk", "192.0.2.1"].map(siteOf)).toEqual(["example.com", "example.com", "example.co.uk", "192.0.2.1"]);
+    const { link, probe } = timedSetup();
+    probe.ms = 500;
+    link.failed("app.example.com");
+    link.failed("api.example.com");
+    expect(await link.hold(true)).toBeNull();
+    link.failed("status.other.test");
+    expect(await link.hold(true)).toBe("slow");
+  });
+
+  it("begins on a recheck that answers slowly, and keeps its order when the wall clock is set back", async () => {
+    const { link, probe, advance } = timedSetup();
+    probe.up = false;
+    expect(await link.hold(true)).toBe("offline");
+    // Back online: a check passes, and the recheck it sets off answers in 3 seconds.
+    probe.up = true;
+    probe.ms = 3000;
+    advance(30);
+    await link.sawInternet();
+    expect(link.link()).toMatchObject({ offlineSince: null, slowSince: "2026-10-15T10:00:33.000Z" });
+    // A quick pass, then the wall clock jumps back an hour: a later slow probe still counts.
+    let steady = 0;
+    const fake = fakeDeps({
+      fetch: async () => {
+        fake.advance(2);
+        steady += 2000;
+        return new Response(null, { status: 204 });
+      },
+    });
+    const stepped = makeConnectivity({ ...fake.deps, monotonic: () => steady }, () => ["https://probe.test/"]);
+    steady = 10_000;
+    void stepped.sawInternet({ requestMs: 100 });
+    fake.advance(-3600);
+    steady += 20_000;
+    expect(await stepped.hold(true)).toBe("slow");
+  });
+
+  it("counts time asleep and a step of the wall clock as each should", async () => {
+    let steady = 0;
+    const calls = { n: 0 };
+    const fake = fakeDeps({
+      fetch: async () => {
+        calls.n++;
+        fake.advance(2);
+        steady += 2000;
+        return new Response(null, { status: 204 });
+      },
+    });
+    const link = makeConnectivity({ ...fake.deps, monotonic: () => steady }, () => ["https://probe.test/"]);
+    expect(await link.hold(true)).toBe("slow");
+    // Asleep for eight hours, the steady clock stands still and the wall clock does not: the spell lapses.
+    fake.advance(8 * 3600);
+    steady += 1000;
+    expect(link.slow()).toBe(false);
+    // A probe is not reused across a step of the wall clock back, though the steady clock says it is recent.
+    expect(await link.hold(true)).toBe("slow");
+    fake.advance(-3600);
+    steady += 5000;
+    await link.hold(true);
+    expect(calls.n).toBe(3);
+  });
+
+  it("keeps a pass from before a step of the wall clock from hiding a link that then drops", async () => {
+    let steady = 0;
+    const net = { up: true };
+    const fake = fakeDeps({
+      fetch: async () => {
+        if (!net.up) throw new TypeError("fetch failed");
+        return new Response(null, { status: 204 });
+      },
+    });
+    const link = makeConnectivity({ ...fake.deps, monotonic: () => steady }, () => ["https://probe.test/"]);
+    void link.sawInternet();
+    fake.advance(-3600);
+    steady += 60_000;
+    net.up = false;
+    expect(await link.hold(true)).toBe("offline");
+  });
+
+  it("is told only by web and vendor checks on the public internet", () => {
+    const http = (url: string) => ({ kind: "http" as const, config: { url } });
+    expect(["https://shop.example.com/", "https://203.0.113.9/"].map((url) => onTheInternet(http(url)))).toEqual([true, true]);
+    expect(["http://nas:8080/", "http://fritz.box/", "https://192.168.1.20/", "http://printer.lan/", "https://router.home/"].map((url) => onTheInternet(http(url)))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(onTheInternet({ kind: "github", config: { repo: "acme/api" } })).toBe(false);
+  });
+
+  it("never comes from an empty probe list", async () => {
+    const none = makeConnectivity(fakeDeps({}).deps, () => []);
+    none.failed("a.test");
+    none.failed("b.test");
+    expect(await none.hold(true)).toBeNull();
+  });
+});
+
 describe("connectivity", () => {
   it("shares one probe among checks that fail together, reused for 15 seconds", async () => {
     const { link, net, advance } = setup();
-    expect(await Promise.all([link.hold(), link.hold(), link.hold()])).toEqual([false, false, false]);
+    expect(await Promise.all([link.hold(), link.hold(), link.hold()])).toEqual([null, null, null]);
     expect(net.calls).toEqual([...DEFAULT_PROBE_URLS]);
     advance(10);
     await link.hold();
@@ -31,19 +259,19 @@ describe("connectivity", () => {
   it("holds while no probe address answers, until a check passes or the evidence lapses", async () => {
     const { link, net, advance } = setup();
     net.up = false;
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     expect(link.link().offlineSince).toBe("2026-10-15T10:00:00.000Z");
     // A later failed probe keeps the time the spell began.
     advance(20);
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     expect(link.link().offlineSince).toBe("2026-10-15T10:00:00.000Z");
     // A check that passes proves the link, even against the probe's reused answer.
     link.sawInternet();
     expect(link.link().offlineSince).toBeNull();
-    expect(await link.hold()).toBe(false);
+    expect(await link.hold()).toBeNull();
     // Without a failed probe for 30 minutes, Watch stops counting itself offline.
     advance(16);
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     advance(31 * 60);
     expect(link.link().offlineSince).toBeNull();
   });
@@ -53,25 +281,27 @@ describe("connectivity", () => {
     const fake = fakeDeps({ fetch: () => new Promise<Response>((_resolve, reject) => pending.push(reject)) });
     const link = makeConnectivity(fake.deps);
     const held = link.hold();
+    // It finished passing after the probe began; one finished at the same instant would not outrank it.
+    fake.advance(1);
     link.sawInternet();
     for (const reject of pending) reject(new TypeError("fetch failed"));
-    expect(await held).toBe(false);
+    expect(await held).toBeNull();
     expect(link.link().offlineSince).toBeNull();
   });
 
   it("doubts a probe list that disagrees with passing checks twice, and stops holding until a probe answers", async () => {
     const { link, net, advance } = setup();
     net.up = false;
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     // A check reached the internet anyway, and the fresh probe still gets no answer.
     await link.sawInternet();
     expect(link.link().probesDisagree).toBe(false);
     advance(16);
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     await link.sawInternet();
-    expect(link.link()).toEqual({ offlineSince: null, probesDisagree: true });
+    expect(link.link()).toEqual({ offlineSince: null, probesDisagree: true, slowSince: null });
     advance(16);
-    expect(await link.hold()).toBe(false);
+    expect(await link.hold()).toBeNull();
     expect(link.offline()).toBe(false);
     // A probe that answers clears the doubt.
     net.up = true;
@@ -116,13 +346,13 @@ describe("connectivity", () => {
       },
     });
     const link = makeConnectivity(fake.deps);
-    expect(await link.hold()).toBe(true);
+    expect(await link.hold()).toBe("offline");
     net.hang = true;
     const slow = link.sawInternet();
     net.hang = false;
     net.up = true;
     fake.advance(16);
-    expect(await link.hold()).toBe(false);
+    expect(await link.hold()).toBeNull();
     for (const reject of hanging) reject(new TypeError("fetch failed"));
     await slow;
     // One real disagreement now would make two if the slow recheck had counted.
@@ -197,7 +427,7 @@ describe("connectivity", () => {
     for (let i = 0; i < 2; i++) {
       net.up = false;
       advance(16);
-      expect(await link.hold()).toBe(true);
+      expect(await link.hold()).toBe("offline");
       net.up = true;
       await link.sawInternet();
     }
@@ -221,7 +451,7 @@ describe("connectivity", () => {
     expect(custom.net.calls).toEqual(["https://probe.example/ok"]);
     const off = setup([]);
     off.net.up = false;
-    expect(await off.link.hold()).toBe(false);
+    expect(await off.link.hold()).toBeNull();
     expect(off.net.calls).toEqual([]);
     // A setting with any address that does not parse falls back to the defaults.
     for (const setting of [["ftp://probe.example/"], ["https://probe .example/"], ["https://ok.example/", 7]]) {
