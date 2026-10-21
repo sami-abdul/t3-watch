@@ -11,5 +11,5 @@
 - [x] 2.1 Tests, typecheck, build and `openspec validate add-home-groups --strict`.
 - [x] 2.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 9, 10 and 8; 24 fixed, 3 declined in `.wattson/decisions.md`.
-- [ ] 2.3 In a browser: the products on a scratch Watch and the new-checks notice after a rescan;
+- [x] 2.3 In a browser: the products on a scratch Watch and the new-checks notice after a rescan;
       the live Watch restarts briefly with its alert settings intact and 22 of 22 checks passing.
