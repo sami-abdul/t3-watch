@@ -56,6 +56,16 @@ const safely =
   };
 
 /** The app view's HTML, built by `pnpm build:app`. */
+/** The package's own version, so the server never reports one release while running another. */
+const packageVersion = (root: string) => {
+  try {
+    const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: unknown }).version;
+    return typeof version === "string" ? version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+};
+
 const appHtml = (root: string) => {
   const file = join(root, "dist", "app", "app.html");
   return existsSync(file)
@@ -72,7 +82,7 @@ export const makeMcpServer = (
     readonly choice?: () => { readonly roots: ReadonlyArray<string>; readonly skippedRoots: ReadonlyArray<string>; readonly reads: Reads; readonly chosen: boolean };
   },
 ) => {
-  const server = new McpServer({ name: "t3-watch", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "t3-watch", version: packageVersion(options.root) }, { instructions: INSTRUCTIONS });
   const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
   const appOnly = { ui: { visibility: ["app"] } };
 
