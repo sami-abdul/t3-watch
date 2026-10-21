@@ -127,6 +127,6 @@
 - [x] 7.11 `src/server/runner.ts`, `src/server/app.ts`, `src/server/runner.test.ts`: a run someone
       asks for waits for its recheck and checks the guard again; scheduled runs do not, and the
       test hook goes.
-- [ ] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
+- [x] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance with a probe address that refuses and a check that reaches the
       internet, a failing check is recorded once the list is flagged, and Home shows the notice.
