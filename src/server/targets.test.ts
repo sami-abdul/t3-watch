@@ -12,7 +12,7 @@ const target = (kind: string, config: Record<string, unknown>, keyLast4: string 
 
 describe("check targets", () => {
   it("says in one sentence what each kind of check contacts", () => {
-    expect(target("http", { url: "https://example.com/", contains: "MailFerret:" })).toBe('GET https://example.com/, expecting "MailFerret:"');
+    expect(target("http", { url: "https://example.com/", contains: "Welcome" })).toBe('GET https://example.com/, expecting "Welcome"');
     expect(target("http", { url: "https://example.com/" })).toBe("GET https://example.com/");
     expect(target("github", { repo: "acme/api" })).toBe("GitHub Actions in acme/api, read with the gh login");
     expect(target("github", { repo: "acme/api", workflow: "nightly", branch: "main" })).toBe("GitHub Actions workflow nightly in acme/api on main, read with the gh login");

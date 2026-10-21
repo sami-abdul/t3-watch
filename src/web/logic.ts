@@ -19,7 +19,9 @@ export interface Ticks {
 
 /** Suggested checks and every stored key start ticked. */
 export const defaultTicks = (scan: Scan): Ticks => ({
-  checks: new Set(scan.suggestions.filter((s) => s.suggested).map((s) => s.checkId)),
+  // As the checks stand now: a check turned on or paused since the scan keeps that choice; only one
+  // still undecided takes the scan's suggestion.
+  checks: new Set(scan.suggestions.filter((s) => s.state === "on" || (s.state === "proposed" && s.suggested)).map((s) => s.checkId)),
   access: new Set(scan.services.flatMap((s) => s.access).filter((a) => a.removable).map((a) => a.accessKey)),
 });
 
@@ -49,9 +51,12 @@ export const applyPayload = (scan: Scan, ticks: Ticks) => ({
     .map((a) => a.accessKey),
 });
 
+/** Parts of a detail line, joined with a middle dot, leaving out the missing and the empty. */
+export const joinParts = (...parts: ReadonlyArray<string | null | undefined>) =>
+  parts.filter((part): part is string => part !== null && part !== undefined && part !== "").join(" · ");
+
 /** A suggestion's detail line: what it contacts and how often, then anything after. */
-export const suggestionDetail = (s: Scan["suggestions"][number], ...more: ReadonlyArray<string>) =>
-  [s.target ?? null, s.cadence ?? null, ...more].filter((part) => part !== null).join(" · ");
+export const suggestionDetail = (s: Scan["suggestions"][number], ...more: ReadonlyArray<string>) => joinParts(s.target, s.cadence, ...more);
 
 export interface Change {
   readonly key: string;
@@ -123,8 +128,6 @@ export interface HomeModel {
   readonly failing: ReadonlyArray<CheckView>;
   readonly couldNotRun: ReadonlyArray<CheckView>;
   readonly drafts: ReadonlyArray<CheckView>;
-  readonly passing: ReadonlyArray<CheckView>;
-  readonly waiting: ReadonlyArray<CheckView>;
   readonly paused: ReadonlyArray<CheckView>;
   readonly onCount: number;
 }
@@ -141,8 +144,6 @@ export const homeModel = (state: WatchState): HomeModel => {
     failing,
     couldNotRun: on.filter((c) => c.lastOutcome === "unknown"),
     drafts: state.checks.filter((c) => c.state === "draft"),
-    passing: on.filter((c) => c.lastOutcome === "pass"),
-    waiting: on.filter((c) => c.lastOutcome === null),
     paused: state.checks.filter((c) => c.state === "paused"),
     onCount: on.length,
   };
@@ -208,3 +209,127 @@ export const alertsNotice = (state: WatchState): { readonly text: string; readon
 
 /** A secret made on this page while alerts are on: the T3 task needs it until an alert gets through. */
 export const needsHandover = (alerts: Alerts, madeSecret: boolean) => madeSecret && alerts.on && latestAlertResult(alerts)?.ok !== true;
+
+const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const kindAndName = (serviceId: string) => {
+  const colon = serviceId.indexOf(":");
+  return colon === -1 ? { kind: "", name: serviceId } : { kind: serviceId.slice(0, colon), name: serviceId.slice(colon + 1) };
+};
+
+/** A repository's name without its owner, once case and punctuation go. */
+const repoName = (fullName: string) => plain(fullName.slice(fullName.lastIndexOf("/") + 1));
+
+const add = (map: Map<string, Set<string>>, name: string, value: string) => map.set(name, (map.get(name) ?? new Set<string>()).add(value));
+
+/** The one value held under a name, or null when none or several are. */
+const one = (values: ReadonlySet<string> | undefined) => (values?.size === 1 ? [...values][0]! : null);
+
+/**
+ * Each check's product. A site or job service is a product, and a repository joins it when their
+ * names match once case and punctuation go and no other site or repository has that name. A site
+ * whose id is its name cut short also matches by its full name. Anything else is a product of its
+ * own: a repository with its owner, so two repositories of one name never merge, a vendor, an AWS
+ * account.
+ */
+export const productsOf = (checks: ReadonlyArray<Pick<CheckView, "serviceId" | "serviceLabel">>) => {
+  const sites = new Map<string, Set<string>>();
+  const labels = new Map<string, string>();
+  const repos = new Map<string, Set<string>>();
+  for (const { serviceId, serviceLabel } of checks) {
+    const { kind, name } = kindAndName(serviceId);
+    if (kind === "github") add(repos, repoName(name), name);
+    const id = plain(name);
+    if (kind !== "custom" || id === "") continue;
+    labels.set(serviceId, serviceLabel);
+    add(sites, id, serviceId);
+    // Only a name the id was cut from: a label such as "Website" must not claim a website repository.
+    const full = plain(serviceLabel);
+    if (full.length > id.length && full.startsWith(id)) add(sites, full, serviceId);
+  }
+  return (check: Pick<CheckView, "serviceId" | "serviceLabel">) => {
+    const { kind, name } = kindAndName(check.serviceId);
+    if (kind === "github") {
+      const repo = repoName(name);
+      const site = one(sites.get(repo));
+      if (site !== null && one(repos.get(repo)) !== null) return { key: site, label: labels.get(site)! };
+    }
+    return { key: check.serviceId, label: check.serviceLabel };
+  };
+};
+
+export interface ProductGroup {
+  readonly key: string;
+  readonly label: string;
+  readonly checks: ReadonlyArray<CheckView>;
+  /** Checks by their latest outcome; waiting have not run yet. */
+  readonly counts: { readonly passing: number; readonly failing: number; readonly couldNotRun: number; readonly waiting: number };
+  /** The worst latest outcome among its checks: fail, then unknown, then not run yet, then pass. */
+  readonly worst: CheckView["lastOutcome"];
+  /** Whether its checks come from more than one service, so each row names its own. */
+  readonly mixed: boolean;
+}
+
+const severity = (outcome: CheckView["lastOutcome"]) => (outcome === "fail" ? 3 : outcome === "unknown" ? 2 : outcome === null ? 1 : 0);
+
+/** Checks by their latest outcome, counted in one pass. */
+const tally = (checks: ReadonlyArray<CheckView>) => {
+  const counts = { passing: 0, failing: 0, couldNotRun: 0, waiting: 0 };
+  for (const { lastOutcome } of checks)
+    counts[lastOutcome === "pass" ? "passing" : lastOutcome === "fail" ? "failing" : lastOutcome === "unknown" ? "couldNotRun" : "waiting"] += 1;
+  return counts;
+};
+
+/** The checks that are on, by product: products with a problem first, then by name. */
+export const productGroups = (state: WatchState): ReadonlyArray<ProductGroup> => {
+  const on = state.checks.filter((c) => c.state === "on");
+  // Only watched services name products: a declined site or a draft does not rename a repository.
+  const productOf = productsOf(on);
+  const groups = new Map<string, { key: string; label: string; checks: Array<CheckView> }>();
+  for (const check of on) {
+    const product = productOf(check);
+    const group = groups.get(product.key) ?? { ...product, checks: [] };
+    group.checks.push(check);
+    groups.set(product.key, group);
+  }
+  return [...groups.values()]
+    .map((group): ProductGroup => {
+      const counts = tally(group.checks);
+      return {
+        key: group.key,
+        label: group.label,
+        checks: group.checks.toSorted((a, b) => a.intent.localeCompare(b.intent)),
+        counts,
+        worst: counts.failing > 0 ? "fail" : counts.couldNotRun > 0 ? "unknown" : counts.waiting > 0 ? null : "pass",
+        mixed: new Set(group.checks.map((c) => c.serviceId)).size > 1,
+      };
+    })
+    .toSorted((a, b) => severity(b.worst) - severity(a.worst) || a.label.localeCompare(b.label));
+};
+
+/** A product's line: "All 3 passing", or what is not, such as "1 failing, 1 passing". */
+export const productSummary = (group: ProductGroup) => {
+  const { passing, failing, couldNotRun, waiting } = group.counts;
+  const n = group.checks.length;
+  if (passing === n) return n === 1 ? "Passing" : `All ${n} passing`;
+  return [
+    failing > 0 ? `${failing} failing` : null,
+    couldNotRun > 0 ? `${couldNotRun} could not run` : null,
+    waiting > 0 ? `${waiting} waiting for a first run` : null,
+    passing > 0 ? `${passing} passing` : null,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
+};
+
+/**
+ * Whether a check in the scan is new to review: nobody has decided on it, and the scan was applied
+ * before. Before the first apply the review shows by itself, so nothing in it is new yet.
+ */
+export const isNewCheck = (scan: Scan, suggestion: Scan["suggestions"][number]) => scan.appliedAt !== null && suggestion.state === "proposed";
+
+/** How many checks in the latest scan are new to review, as the review marks them. */
+export const newChecksToReview = (state: WatchState) => {
+  const scan = state.setup.scan;
+  return scan === null ? 0 : scan.suggestions.filter((s) => isNewCheck(scan, s)).length;
+};

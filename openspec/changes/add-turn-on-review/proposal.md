@@ -8,7 +8,7 @@ contact, so the person agrees to a schedule of calls they cannot see.
 ## What Changes
 
 - **Each check's target.** Watch words what each check contacts, such as "GET
-  https://example.com/, expecting MailFerret:" or "Stripe's API at https://api.stripe.com, with
+  https://example.com/, expecting Welcome" or "Stripe's API at https://api.stripe.com, with
   the key ending 1234", never a secret such as a heartbeat token. The review shows it on every
   suggested check, and Details on every check.
 - **Look before turning on.** Watch these first lists every check it will turn on, each with its

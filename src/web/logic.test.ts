@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import { accessRows, alertSteps, alertsNotice, applyChanges, latestAlertResult, needsHandover, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
+import { accessRows, alertSteps, alertsNotice, applyChanges, isNewCheck, latestAlertResult, needsHandover, newChecksToReview, productGroups, productsOf, productSummary, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
@@ -89,7 +89,7 @@ describe("page", () => {
       }),
     );
     expect(model.headline).toBe("1 thing is broken");
-    expect(model.passing).toHaveLength(10);
+    expect(model.onCount).toBe(12);
     expect(model.couldNotRun.map((c) => c.id)).toEqual(["u"]);
     expect(homeModel(state({ checks: [check({})] })).headline).toBe("All clear");
   });
@@ -173,5 +173,99 @@ describe("applying the review", () => {
     const losing = applyChanges(keyed, { turnOn: [first!.checkId, second!.checkId], removeKeys: [key.accessKey] });
     expect(losing.turnOn).toEqual([]);
     expect(losing.pause.map((c) => c.key)).toEqual([second!.checkId]);
+  });
+});
+
+describe("Home by product", () => {
+  const site = check({ id: "site", serviceId: "custom:shop", serviceLabel: "Shop", intent: "Site answers", lastOutcome: "pass" });
+  const ci = check({ id: "ci", serviceId: "github:acme/shop", serviceLabel: "acme/shop", intent: "CI on main is passing", lastOutcome: "fail" });
+
+  it("joins a site and its repository under the site's name, and keeps everything else apart", () => {
+    const productOf = productsOf([site, ci]);
+    expect(productOf(ci)).toEqual(productOf(site));
+    expect(productOf(site)).toEqual({ key: "custom:shop", label: "Shop" });
+    // A site's id is its name cut at 40 characters, as drafts.ts makes it; its full name still finds the repository.
+    const name = "The quite long product name for the client portal";
+    const long = check({ serviceId: `custom:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`, serviceLabel: name });
+    const longRepo = check({ serviceId: "github:acme/the-quite-long-product-name-for-the-client-portal", serviceLabel: "acme/the-quite-long-product-name-for-the-client-portal" });
+    expect(productsOf([long, longRepo])(longRepo).key).toBe(long.serviceId);
+    // Two repositories of one name under different owners, with no site, stay two products, owner and all.
+    const a = check({ serviceId: "github:acme/api", serviceLabel: "acme/api" });
+    const b = check({ serviceId: "github:example/api", serviceLabel: "example/api" });
+    expect(productsOf([a, b])(a).key).not.toBe(productsOf([a, b])(b).key);
+    expect(productsOf([a])(a).label).toBe("acme/api");
+    const stripe = check({ serviceId: "vendor:stripe", serviceLabel: "Stripe" });
+    expect(productsOf([stripe])(stripe)).toEqual({ key: "vendor:stripe", label: "Stripe" });
+    // A site named like two repositories joins neither: it cannot tell which is its own.
+    const apiSite = check({ serviceId: "custom:api", serviceLabel: "API" });
+    const both = productsOf([apiSite, a, b]);
+    expect(new Set([both(apiSite).key, both(a).key, both(b).key]).size).toBe(3);
+  });
+
+  it("matches a site by its own id, and by its label only when the id was cut from it", () => {
+    // A generic label is not a name the id was cut from, so it claims no repository.
+    const labelled = check({ serviceId: "custom:shop-site", serviceLabel: "Website" });
+    const website = check({ serviceId: "github:acme/website", serviceLabel: "acme/website" });
+    expect(productsOf([labelled, website])(website).key).toBe("github:acme/website");
+    // Two sites whose names match once punctuation goes stay two products, and the repository of
+    // that name joins neither.
+    const first = check({ serviceId: "custom:my-app", serviceLabel: "My App" });
+    const second = check({ serviceId: "custom:myapp", serviceLabel: "MyApp" });
+    const repo = check({ serviceId: "github:acme/my-app", serviceLabel: "acme/my-app" });
+    const productOf = productsOf([first, second, repo]);
+    expect([productOf(first), productOf(second), productOf(repo)]).toEqual([
+      { key: "custom:my-app", label: "My App" },
+      { key: "custom:myapp", label: "MyApp" },
+      { key: "github:acme/my-app", label: "acme/my-app" },
+    ]);
+  });
+
+  it("counts each product's checks by outcome, finds its worst state and puts problems first", () => {
+    const solo = check({ id: "solo", serviceId: "github:acme/zeta", serviceLabel: "acme/zeta", intent: "CI", lastOutcome: "pass" });
+    const paused = check({ id: "off", serviceId: "custom:paused", serviceLabel: "Paused one", state: "paused" });
+    const fresh = check({ id: "fresh", serviceId: "custom:new-site", serviceLabel: "New site", intent: "Answers", lastOutcome: null });
+    const stuck = check({ id: "stuck", serviceId: "custom:jobs", serviceLabel: "Jobs", intent: "Nightly job pings", lastOutcome: "unknown" });
+    const waiting = check({ id: "waiting", serviceId: "custom:jobs", serviceLabel: "Jobs", intent: "Backup pings", lastOutcome: null });
+    // The repository comes first, yet the group takes the site's name.
+    const groups = productGroups(state({ checks: [ci, solo, site, paused, fresh, stuck, waiting] }));
+    expect(groups.map((g) => [g.label, g.checks.length, g.worst, g.mixed])).toEqual([
+      ["Shop", 2, "fail", true],
+      ["Jobs", 2, "unknown", false],
+      ["New site", 1, null, false],
+      ["acme/zeta", 1, "pass", false],
+    ]);
+    expect(groups[0]!.checks.map((c) => c.id)).toEqual(["ci", "site"]);
+    expect(productSummary(groups[0]!)).toBe("1 failing, 1 passing");
+    expect(productSummary(groups[1]!)).toBe("1 could not run, 1 waiting for a first run");
+    // Not run yet is not a failure.
+    expect(productSummary(groups[2]!)).toBe("1 waiting for a first run");
+    expect(productSummary(groups[3]!)).toBe("Passing");
+    // A site that is not watched does not rename its repository's group.
+    const declined = { ...site, state: "off" as const };
+    expect(productGroups(state({ checks: [declined, ci] })).map((g) => g.label)).toEqual(["acme/shop"]);
+  });
+
+  it("counts new checks to review only after a scan has been applied, as the review marks them", () => {
+    const suggestion = { checkId: "n", serviceId: "s", title: "S", intent: "i", outcome: "pass", summary: "", state: "proposed", suggested: true } as const;
+    const decided = { ...suggestion, checkId: "d", state: "off" } as const;
+    // Not ticked by default, as when its first run could not finish, yet still nobody has decided on it.
+    const unticked = { ...suggestion, checkId: "u", suggested: false } as const;
+    const withScan = (s: Scan) => state({ setup: { scan: s, status: { running: false, step: null, error: null } } });
+    expect(newChecksToReview(state({}))).toBe(0);
+    const first = { ...scan, appliedAt: null, suggestions: [suggestion] };
+    expect(newChecksToReview(withScan(first))).toBe(0);
+    expect(isNewCheck(first, suggestion)).toBe(false);
+    const later = { ...scan, appliedAt: "2026-10-15T09:00:00Z", suggestions: [suggestion, decided, unticked] };
+    expect(newChecksToReview(withScan(later))).toBe(2);
+    expect(later.suggestions.filter((s) => isNewCheck(later, s)).map((s) => s.checkId)).toEqual(["n", "u"]);
+  });
+});
+
+describe("review ticks", () => {
+  it("follow the checks as they stand now, not as the scan found them", () => {
+    const [first, second] = scan.suggestions;
+    const now = { ...scan, suggestions: [{ ...first!, suggested: true, state: "paused" as const }, { ...second!, suggested: false, state: "on" as const }] };
+    // Paused since the scan: unticked. Turned on since: ticked.
+    expect([...defaultTicks(now).checks]).toEqual([second!.checkId]);
   });
 });

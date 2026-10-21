@@ -12,6 +12,8 @@ import {
   applyPayload,
   checkAvailable,
   defaultTicks,
+  isNewCheck,
+  joinParts,
   reviewGroups,
   type Ticks,
   applyChanges,
@@ -297,6 +299,7 @@ export function Review({
   onApplied,
   onRescan,
   onChoose,
+  onBack,
 }: {
   readonly client: WatchClient;
   readonly scan: Scan;
@@ -306,6 +309,8 @@ export function Review({
   readonly onRescan: () => void;
   /** Shows what Watch may read before scanning again. */
   readonly onChoose: () => void;
+  /** Back to Home without applying, when the review was opened from there. */
+  readonly onBack: (() => void) | null;
 }) {
   const [ticks, setTicks] = useState<Ticks>(() => defaultTicks(scan));
   const [applying, setApplying] = useState(false);
@@ -388,7 +393,8 @@ export function Review({
               return {
                 key: s.checkId,
                 title: `${s.title}: ${s.intent}`,
-                detail: available ? suggestionDetail(s, `Ran once: ${s.summary}`) : "Needs the key you unticked",
+                // New since the last review, so the checks Home counted are easy to find.
+                detail: joinParts(isNewCheck(scan, s) ? "New" : null, available ? suggestionDetail(s, `Ran once: ${s.summary}`) : "Needs the key you unticked"),
                 badge: outcomeTone[s.outcome],
                 checked: available && ticks.checks.has(s.checkId),
                 onToggle: available ? () => changeTicks({ ...ticks, checks: toggle(ticks.checks, s.checkId) }) : null,
@@ -447,6 +453,11 @@ export function Review({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Muted className={typeClass("caption")}>Untick what you don't want. You can change any of it later.</Muted>
           <span className="flex gap-2">
+            {onBack !== null ? (
+              <Button variant="ghost" onClick={onBack}>
+                Back to Home
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={onChoose}>
               Scan again
             </Button>

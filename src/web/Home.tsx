@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "../server/notices.ts";
 import { pendingText } from "../server/pending.ts";
@@ -6,7 +6,8 @@ import type { CheckView, WatchState } from "../server/state.ts";
 import type { WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
-import { ago, alertsNotice, askAbout, homeModel } from "./logic.ts";
+import { cn } from "~/lib/utils";
+import { ago, alertsNotice, askAbout, homeModel, joinParts, newChecksToReview, productGroups, productSummary } from "./logic.ts";
 import { Heading, Muted, outcomeTone, RowList, Section } from "./ui.tsx";
 
 const tomorrow = (now: Date) => new Date(now.getTime() + 24 * 3600 * 1000).toISOString();
@@ -17,6 +18,7 @@ export function Home({
   refresh,
   onAddServices,
   onDetails,
+  onReview,
 }: {
   readonly client: WatchClient;
   readonly state: WatchState;
@@ -24,13 +26,18 @@ export function Home({
   readonly onAddServices: () => void;
   /** Opens Details, scrolled to a section when one is named. */
   readonly onDetails: (focus?: "alerts") => void;
+  /** Opens the review of the latest scan. */
+  readonly onReview: () => void;
 }) {
-  const model = homeModel(state);
-  const alertsNote = alertsNotice(state);
+  // Worked out once per state, not on every press or notice.
+  const { model, alertsNote, products, toReview } = useMemo(
+    () => ({ model: homeModel(state), alertsNote: alertsNotice(state), products: productGroups(state), toReview: newChecksToReview(state) }),
+    [state],
+  );
   const now = new Date(state.generatedAt);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showPassing, setShowPassing] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const lastRun = state.checks.map((c) => c.lastRunAt).filter((t): t is string => t !== null).toSorted().at(-1) ?? null;
   const unreachable = state.services.filter((s) => !s.reachable);
 
@@ -66,9 +73,7 @@ export function Home({
     checks.map((check) => ({
       key: check.id,
       title: `${check.serviceLabel}: ${check.intent}`,
-      detail: [check.lastSummary, check.note === null ? null : `Agent: ${check.note}`, `Checked ${ago(check.lastRunAt, now)}`]
-        .filter(Boolean)
-        .join(" · "),
+      detail: joinParts(check.lastSummary, check.note === null ? null : `Agent: ${check.note}`, `Checked ${ago(check.lastRunAt, now)}`),
       badge: outcomeTone[check.lastOutcome ?? "unknown"],
       action: checkActions(check),
     }));
@@ -97,6 +102,16 @@ export function Home({
           <Muted className="text-foreground">{alertsNote.text}</Muted>
           <Button size="compact" variant="secondary" onClick={() => onDetails("alerts")}>
             {alertsNote.button}
+          </Button>
+        </div>
+      ) : null}
+      {toReview > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Muted className="text-foreground">
+            {toReview === 1 ? "1 new check to review" : `${toReview} new checks to review`}, from the last scan.
+          </Muted>
+          <Button size="compact" variant="secondary" onClick={onReview}>
+            Review
           </Button>
         </div>
       ) : null}
@@ -155,29 +170,58 @@ export function Home({
         </Section>
       ) : null}
 
-      {model.passing.length + model.waiting.length > 0 ? (
+      {products.length > 0 ? (
         <Section
-          title={`${model.passing.length} passing`}
+          title={`${products.length} product${products.length === 1 ? "" : "s"}`}
           aside={
-            <Button size="compact" variant="ghost" onClick={() => setShowPassing(!showPassing)}>
-              {showPassing ? "Hide" : "Show"}
+            <Button size="compact" variant="ghost" onClick={() => setShowChecks(!showChecks)}>
+              {showChecks ? "Hide checks" : "Show checks"}
             </Button>
           }
         >
-          {showPassing ? (
+          {showChecks ? (
+            <div className="space-y-4">
+              {products.map((product) => {
+                // Failing and unrunnable checks are listed under Broken and Could not run, with their actions.
+                const shown = product.checks.filter((c) => c.lastOutcome !== "fail" && c.lastOutcome !== "unknown");
+                return (
+                  <div key={product.key} className="space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-3 px-1">
+                      <span className={cn("text-foreground", typeClass("body"))}>{product.label}</span>
+                      <span className={cn("text-muted-foreground", typeClass("caption"))}>{productSummary(product)}</span>
+                    </div>
+                    {shown.length > 0 ? (
+                      <RowList
+                        label={product.label}
+                        rows={shown.map((check) => ({
+                          key: check.id,
+                          title: check.intent,
+                          detail: joinParts(
+                            // A product made of several services says which one each check watches.
+                            product.mixed ? check.serviceLabel : null,
+                            check.pending !== null ? `${pendingText(check.pending.outcome)}: ${check.pending.summary}` : (check.lastSummary ?? "Waiting for its first run"),
+                            ago(check.pending?.at ?? check.lastRunAt, now),
+                          ),
+                          badge: check.lastOutcome === null ? null : outcomeTone[check.lastOutcome],
+                        }))}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            // Each product at a glance, problems first, so a failing one shows without pressing anything.
             <RowList
-              label="Passing"
-              rows={[...model.passing, ...model.waiting].map((check) => ({
-                key: check.id,
-                title: `${check.serviceLabel}: ${check.intent}`,
-                detail:
-                  check.pending !== null
-                    ? `${pendingText(check.pending.outcome)}: ${check.pending.summary} · ${ago(check.pending.at, now)}`
-                    : `${check.lastSummary ?? "Waiting for its first run"} · ${ago(check.lastRunAt, now)}`,
-                badge: check.lastOutcome === null ? null : outcomeTone[check.lastOutcome],
+              label="Products"
+              rows={products.map((product) => ({
+                key: product.key,
+                title: product.label,
+                detail: productSummary(product),
+                badge: product.worst === null ? null : outcomeTone[product.worst],
               }))}
             />
-          ) : null}
+          )}
         </Section>
       ) : null}
 

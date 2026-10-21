@@ -86,11 +86,20 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
           }}
           onRescan={rescan}
           onChoose={chooseThenScan}
+          // A scan applied before can wait: the person came to look, not to decide now.
+          onBack={state.setup.scan!.appliedAt === null ? null : () => setWantsReview(false)}
         />
       );
     else
       body = (
-        <Home client={client} state={state} refresh={refresh} onAddServices={chooseThenScan} onDetails={(focus) => setDetails(focus ?? "top")} />
+        <Home
+          client={client}
+          state={state}
+          refresh={refresh}
+          onAddServices={chooseThenScan}
+          onDetails={(focus) => setDetails(focus ?? "top")}
+          onReview={() => setWantsReview(true)}
+        />
       );
   }
 
