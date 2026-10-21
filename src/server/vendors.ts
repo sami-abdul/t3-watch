@@ -6,6 +6,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import type { CheckResult } from "./checks/types.ts";
@@ -92,7 +93,8 @@ export const validateVendor = (input: unknown): Vendor => {
   return vendor;
 };
 
-const catalogDir = new URL("../../catalog/", import.meta.url).pathname;
+// A path, not a URL's pathname, which keeps %20 for a space and a leading slash before C: on Windows.
+const catalogDir = fileURLToPath(new URL("../../catalog/", import.meta.url));
 
 /** The shipped catalog plus approved local descriptions, local ones winning by id. */
 export const loadCatalog = (extra: ReadonlyArray<unknown> = [], dir = catalogDir) => {

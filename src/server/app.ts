@@ -24,6 +24,13 @@ export class WatchError extends Error {
 
 export type CheckAction = "on" | "pause" | "resume" | "snooze" | "run";
 
+/** What a demo Watch refuses, so nothing real comes into it: it shows sample data only. */
+export const SAMPLE_ONLY = {
+  reads: "The demo shows sample data only, so it neither scans nor changes what it may read. Your own Watch asks what it may read, then scans.",
+  keys: "The demo takes no keys and keeps its sample one: its answers are made up, so any key would seem to work. Keys go in your own Watch.",
+  secret: "The demo makes no signing secret: its alerts go nowhere, and a secret made here could end up with your own Watch thread. Make one in your own Watch.",
+} as const;
+
 export interface PublicKey extends Omit<KeyRecord, "removedAt"> {}
 
 interface WatchOptions {
@@ -39,6 +46,8 @@ interface WatchOptions {
   readonly reads?: () => Reads;
   /** Whether the person has chosen what setup may read; a new install scans only after. */
   readonly chosen?: () => boolean;
+  /** A demo: it takes no key, makes no signing secret and does not scan, so nothing real comes in. */
+  readonly sample?: boolean;
 }
 
 const makeCore = (options: WatchOptions) => {
@@ -122,6 +131,7 @@ const makeCore = (options: WatchOptions) => {
     source?: string;
     sourceKey?: string | null;
   }) => {
+    if (options.sample === true) throw new WatchError(SAMPLE_ONLY.keys, 403);
     const vendor = catalog.get(input.vendor);
     if (vendor?.key === undefined) throw new WatchError(`Watch cannot use a key for ${input.vendor}`);
     const value = input.value.trim();
@@ -146,6 +156,7 @@ const makeCore = (options: WatchOptions) => {
   };
 
   const removeKey = (id: string) => {
+    if (options.sample === true) throw new WatchError(SAMPLE_ONLY.keys, 403);
     if (!store.keys().some((k) => k.id === id)) throw new WatchError(`No key ${id}`, 404);
     store.removeKey(id, now());
   };
@@ -156,6 +167,7 @@ const makeCore = (options: WatchOptions) => {
     runner,
     link: connectivity.link,
     deps: options.deps,
+    sample: options.sample === true,
     now,
     vendors: () => catalog,
     reloadCatalog,

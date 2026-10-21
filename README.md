@@ -11,6 +11,24 @@ own clock without spending model tokens, and wakes your agent only when somethin
 - **The chat** is for understanding and authoring. A "Watch" thread in [T3 Code](https://t3.codes)
   (or any MCP client) investigates failures, writes new checks and shows the page inline.
 
+![Home in the demo: one check broken with the Watch thread's note on it, a check an agent wrote waiting to be turned on, and six products, the broken one first](docs/home.png)
+
+## Try it first
+
+```sh
+npx @lfg-labs/t3-watch demo
+```
+
+With Node 24 or newer, the demo runs a Watch with sample checks on this machine and prints a
+sign-in link for its page. Every check and alert in it gets a canned answer, and it neither scans
+nor takes keys, so it reaches none of your accounts and sends nothing off the machine. Signing in
+to it leaves your own Watch signed in. Ctrl-C stops it and removes it. The screenshots here come
+from it.
+
+| Each product with its checks | Editing a check in Details |
+| --- | --- |
+| ![The products expanded, each listing its checks with their latest result](docs/checks.png) | ![Details with the edit form open: name, how often it runs, and its settings as JSON](docs/details.png) |
+
 ## Install
 
 Watch needs Node 24 or newer, on a machine that stays on.

@@ -7,13 +7,31 @@ import { type CheckAction, type Watch, WatchError } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { deleteCheck, editCheck, restoreCheck } from "./edits.ts";
 import { isLiveSignInCode, isSession, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
-import type { Store } from "./store.ts";
 import { readState } from "./state.ts";
 
 const MAX_BODY = 64 * 1024;
 /** A sign-in form holds one short code. */
 const MAX_FORM = 4096;
-const COOKIE = "t3w";
+/**
+ * The page's session cookie. A demo's has a name of its own and lasts until the browser closes, so
+ * signing in to a demo never replaces the session of a real Watch on the same host.
+ */
+const sessionCookie = (sample: boolean) => (sample ? { name: "t3w-demo", maxAge: null } : { name: "t3w", maxAge: SESSION_DAYS * 86_400 });
+
+/** What the page says about signing in: after a spent link, to the API, and on the page itself. */
+export interface SignInHelp {
+  readonly link: string;
+  readonly api: string;
+  readonly page: string;
+}
+
+export const SIGN_IN_HELP: SignInHelp = {
+  link: "Run t3-watch url for a new one, or ask your Watch thread.",
+  api: "Sign in with a one-time link from t3-watch url",
+  page: "Sign in with a one-time link: run t3-watch url, or ask your Watch thread for the page.",
+};
+
+type Session = Pick<Watch, "store" | "sample">;
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -34,18 +52,19 @@ const sameToken = (given: string, expected: string) => {
 };
 
 /** The page's signed-in session: the cookie the sign-in link sets. */
-export const hasPageSession = (request: IncomingMessage, store: Store, now: Date) => {
+export const hasPageSession = (request: IncomingMessage, watch: Session, now: Date) => {
+  const { name: wanted } = sessionCookie(watch.sample);
   const cookie = (request.headers.cookie ?? "")
     .split(";")
     .map((part) => part.trim().split("="))
-    .find(([name]) => name === COOKIE);
+    .find(([name]) => name === wanted);
   // Session ids are URL-safe base64, so the value is compared as sent; nothing to decode.
-  return cookie?.[1] !== undefined && isSession(store, cookie[1], now);
+  return cookie?.[1] !== undefined && isSession(watch.store, cookie[1], now);
 };
 
 /** Refuses all but a signed-in browser on the page itself: the person's own decisions, not an agent's or another site's. */
-export const requirePage = (request: IncomingMessage, store: Store, now: Date, publicUrl: string | null, message: string) => {
-  if (!hasPageSession(request, store, now) || !fromPage(request, publicUrl)) throw new WatchError(message, 403);
+export const requirePage = (request: IncomingMessage, watch: Session, now: Date, publicUrl: string | null, message: string) => {
+  if (!hasPageSession(request, watch, now) || !fromPage(request, publicUrl)) throw new WatchError(message, 403);
 };
 
 /** The access token agents and the CLI send as a bearer token. */
@@ -55,8 +74,8 @@ export const hasToken = (request: IncomingMessage, token: string) => {
 };
 
 /** The access token agents and the CLI send, or a signed-in browser's session. */
-export const isAuthorized = (request: IncomingMessage, token: string, store: Store, now: Date) =>
-  hasToken(request, token) || hasPageSession(request, store, now);
+export const isAuthorized = (request: IncomingMessage, token: string, watch: Session, now: Date) =>
+  hasToken(request, token) || hasPageSession(request, watch, now);
 
 /**
  * A request the page made from its own origin, not another site or a script without an Origin.
@@ -136,8 +155,11 @@ export const makeHttpServer = (options: {
   readonly webDir: string;
   readonly extraRoutes?: ReadonlyArray<Route>;
   readonly publicRoutes?: ReadonlyArray<Route>;
+  /** How to sign in, for a Watch other than an installed one, such as the demo. */
+  readonly signInHelp?: SignInHelp;
 }) => {
   const { watch } = options;
+  const help = options.signInHelp ?? SIGN_IN_HELP;
 
   const heartbeat: Route = async (request, response, url) => {
     const match = /^\/hb\/([A-Za-z0-9_-]{16,64})$/.exec(url.pathname);
@@ -163,9 +185,7 @@ export const makeHttpServer = (options: {
     if (url.pathname !== "/signin") return false;
     const refuse = () => {
       response.writeHead(401, { "content-type": "text/plain", "cache-control": "no-store" });
-      response.end(
-        `This sign-in link is not valid, was already used or is older than ${SIGN_IN_MINUTES} minutes. Run t3-watch url for a new one, or ask your Watch thread.`,
-      );
+      response.end(`This sign-in link is not valid, was already used or is older than ${SIGN_IN_MINUTES} minutes. ${help.link}`);
       return true;
     };
     if (request.method === "GET" || request.method === "HEAD") {
@@ -194,8 +214,9 @@ export const makeHttpServer = (options: {
     if (!useSignInCode(watch.store, form.get("code") ?? "", watch.deps.now())) return refuse();
     const session = startSession(watch.store, watch.deps.now());
     const secure = (options.config().publicUrl ?? "").startsWith("https:") ? "; Secure" : "";
+    const cookie = sessionCookie(watch.sample);
     response.writeHead(302, {
-      "set-cookie": `${COOKIE}=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}${secure}`,
+      "set-cookie": `${cookie.name}=${session}; Path=/; HttpOnly; SameSite=Lax${cookie.maxAge === null ? "" : `; Max-Age=${cookie.maxAge}`}${secure}`,
       location: "/",
     });
     response.end();
@@ -223,7 +244,7 @@ export const makeHttpServer = (options: {
     const change = /^\/api\/checks\/([^/]+)\/(edit|delete|restore)$/.exec(path);
     if (change !== null && method === "POST") {
       // The person changes checks on the page: neither the token agents hold nor another site may.
-      requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Edit and delete checks on the Watch page");
+      requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "Edit and delete checks on the Watch page");
       const id = decodeURIComponent(change[1]!);
       const check =
         change[2] === "edit" ? editCheck(watch, id, await readJson(request)) : change[2] === "delete" ? deleteCheck(watch, id) : restoreCheck(watch, id);
@@ -293,8 +314,8 @@ export const makeHttpServer = (options: {
       for (const route of [heartbeat, signin, ...(options.publicRoutes ?? [])])
         if (await route(request, response, url)) return;
       const guarded = url.pathname.startsWith("/api/") || url.pathname === "/mcp";
-      if (guarded && !isAuthorized(request, options.config().token, watch.store, watch.deps.now())) {
-        sendJson(response, 401, { error: "Sign in with a one-time link from t3-watch url" });
+      if (guarded && !isAuthorized(request, options.config().token, watch, watch.deps.now())) {
+        sendJson(response, 401, { error: help.api });
         return;
       }
       for (const route of [api, ...(options.extraRoutes ?? [])])
@@ -304,9 +325,9 @@ export const makeHttpServer = (options: {
         return;
       }
       // The page's HTML only reaches people who signed in; the sign-in link sets the cookie.
-      if (!isAuthorized(request, options.config().token, watch.store, watch.deps.now())) {
+      if (!isAuthorized(request, options.config().token, watch, watch.deps.now())) {
         response.writeHead(401, { "content-type": "text/plain" });
-        response.end("Sign in with a one-time link: run t3-watch url, or ask your Watch thread for the page.");
+        response.end(help.page);
         return;
       }
       if (await staticFiles(request, response, url)) return;

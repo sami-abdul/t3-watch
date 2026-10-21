@@ -1,7 +1,7 @@
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 
 import { deliverAlerts, makeAlertSecret, sendTestAlert } from "./alerts.ts";
-import { type Watch, WatchError } from "./app.ts";
+import { SAMPLE_ONLY, type Watch, WatchError } from "./app.ts";
 import { resolve } from "node:path";
 
 import { pageUrl, READS, type Reads, readsOf, saveConfig, type WatchConfig } from "./config.ts";
@@ -43,6 +43,7 @@ export const extendServer = (options: {
       return true;
     }
     if (request.method !== "POST") return false;
+    if (watch.sample) throw new WatchError(SAMPLE_ONLY.reads, 403);
     const body = await readJson(request);
     saveConfig({ ...options.config(), roots: folders(body.roots, "roots") }, options.home);
     const { token: _, ...rest } = options.reloadConfig();
@@ -54,8 +55,9 @@ export const extendServer = (options: {
   const setup: Route = async (request, response, url) => {
     if (url.pathname !== "/api/setup") return false;
     if (request.method === "POST") {
+      if (watch.sample) throw new WatchError(SAMPLE_ONLY.reads, 403);
       // The person chooses on the page: neither the token agents hold nor another site may.
-      requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Choose what Watch may read on the Watch page");
+      requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "Choose what Watch may read on the Watch page");
       const body = await readJson(request);
       const roots = folders(body.roots, "roots");
       const skippedRoots = (body.skippedRoots === undefined ? [] : folders(body.skippedRoots, "skippedRoots")).filter((r) => !roots.includes(r));
@@ -110,7 +112,7 @@ export const extendServer = (options: {
   // which anything running as this user can.
   const alertSecret: Route = async (request, response, url) => {
     if (url.pathname !== "/api/alerts/secret" || request.method !== "POST") return false;
-    requirePage(request, watch.store, watch.deps.now(), options.config().publicUrl, "Make the signing secret on the Watch page");
+    requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "Make the signing secret on the Watch page");
     sendJson(response, 200, { secret: makeAlertSecret(watch) });
     return true;
   };

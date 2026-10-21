@@ -4,7 +4,7 @@
  */
 import { createHmac, randomBytes } from "node:crypto";
 
-import { type WatchCore, WatchError } from "./app.ts";
+import { SAMPLE_ONLY, type WatchCore, WatchError } from "./app.ts";
 import type { ChangeEvent } from "./store.ts";
 
 export interface AlertSettings {
@@ -62,6 +62,7 @@ export const setAlerts = (watch: WatchCore, input: { url: string | null; secret?
  * that passes through a chat stays in that chat's transcript.
  */
 export const makeAlertSecret = (watch: WatchCore) => {
+  if (watch.sample) throw new WatchError(SAMPLE_ONLY.secret, 403);
   const secret = randomBytes(32).toString("hex");
   watch.store.setKv("alerts", { ...alertSettings(watch), secret } satisfies AlertSettings);
   forgetResults(watch);

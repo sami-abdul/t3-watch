@@ -1,14 +1,15 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, platform } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { alertHost } from "./alerts.ts";
-import { makeWatch } from "./app.ts";
+import { makeWatch, type Watch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { listenHosts, loadConfig, localUrl, pageUrl, readsOf, saveConfig, watchHome } from "./config.ts";
-import { makeHttpServer } from "./http.ts";
-import { firstLine, liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
+import { DEMO_AWS_CONFIG, DEMO_READS, DEMO_SIGN_IN_HELP, demoDeps, seedDemo } from "./demo.ts";
+import { makeHttpServer, type SignInHelp } from "./http.ts";
+import { type Deps, firstLine, liveDeps, type ProcResult, type RunProc, runProc } from "./proc.ts";
 import { existingWatchProject, makeWatchProject, workspaceFolder } from "./project.ts";
 import { homeEnv, type ProviderHome, providerHomes, readT3Settings, t3SettingsFile } from "./providers.ts";
 import { choosePort, findTailnet, type Refusal, sendsToWatch, servedPorts, serveWatch, tailnetUrl, unserve, watchTarget } from "./tailscale.ts";
@@ -31,17 +32,35 @@ export const packageRoot = () => {
   return dir;
 };
 
-const start = async () => {
-  const home = watchHome();
+/** The signals that stop Watch, a closed terminal and Ctrl-backslash included; only SIGKILL cannot be caught. */
+const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
+
+/**
+ * Runs the service for a folder until it is stopped: the real one for start, and the demo with its
+ * canned deps, its sample data and its own words once it listens.
+ */
+const serve = async (
+  home: string,
+  options: {
+    readonly deps: Deps;
+    /** A demo, which takes no key, makes no secret and does not scan. */
+    readonly sample?: boolean;
+    /** Fills the Watch before it listens. */
+    readonly prepare?: (watch: Watch, config: WatchConfig) => Promise<void>;
+    readonly announce?: (config: WatchConfig) => void;
+    readonly signInHelp?: SignInHelp;
+  },
+) => {
   let config = loadConfig(home);
   const watch = makeWatch({
     home,
     dbFile: join(home, "watch.sqlite"),
-    deps: liveDeps,
+    deps: options.deps,
     roots: () => config.roots,
     probeUrls: () => config.probeUrls,
     reads: () => readsOf(config),
     chosen: () => config.reads !== undefined,
+    sample: options.sample === true,
   });
   const extension = extendServer({
     watch,
@@ -57,15 +76,32 @@ const start = async () => {
       webDir: join(packageRoot(), "dist", "web"),
       extraRoutes: extension.routes,
       publicRoutes: extension.publicRoutes,
+      ...(options.signInHelp === undefined ? {} : { signInHelp: options.signInHelp }),
     });
+  const servers: Array<ReturnType<typeof makeServer>> = [];
+  // Stops whatever has started, from a signal at any point.
+  const stop = (code = 0) => {
+    extension.stop();
+    for (const server of servers) server.close();
+    watch.close();
+    process.exit(code);
+  };
+  for (const signal of STOP_SIGNALS) process.on(signal, () => stop());
   const listen = (server: ReturnType<typeof makeServer>, host: string) =>
     new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(config.port, host, resolve);
     });
   const [primary, ...extra] = listenHosts(config);
-  const servers = [makeServer()];
-  await listen(servers[0]!, primary!);
+  try {
+    await options.prepare?.(watch, config);
+    const first = makeServer();
+    await listen(first, primary!);
+    servers.push(first);
+  } catch (error) {
+    watch.close();
+    throw error;
+  }
   // Loopback lets a local proxy such as tailscale serve reach the page. Missing it is not fatal.
   for (const host of extra) {
     const server = makeServer();
@@ -79,16 +115,69 @@ const start = async () => {
   }
   watch.runner.start();
   extension.start();
-  console.log(`t3-watch is running at ${pageUrl(config)}`);
-  console.log("Sign in with a one-time link from: t3-watch url");
-  const stop = () => {
-    extension.stop();
-    for (const server of servers) server.close();
-    watch.close();
-    process.exit(0);
-  };
-  process.on("SIGTERM", stop);
-  process.on("SIGINT", stop);
+  try {
+    if (options.announce !== undefined) options.announce(config);
+    else {
+      console.log(`t3-watch is running at ${pageUrl(config)}`);
+      console.log("Sign in with a one-time link from: t3-watch url");
+    }
+  } catch (error) {
+    // Running without saying where, or how to sign in, would help nobody.
+    console.error(`t3-watch could not start: ${error instanceof Error ? error.message : String(error)}`);
+    stop(1);
+  }
+};
+
+const start = () => serve(watchHome(), { deps: liveDeps });
+
+export const DEMO_PORT = 8470;
+
+/** The demo's port: nothing, or --port and a whole number from 1024 to 65535. */
+export const demoPort = (args: ReadonlyArray<string>) => {
+  if (args.length === 0) return DEMO_PORT;
+  const usage = `t3-watch demo takes only --port and a port number from 1024 to 65535, such as ${DEMO_PORT}`;
+  if (args.length !== 2 || args[0] !== "--port" || !/^\d{4,5}$/.test(args[1]!)) throw new Error(usage);
+  const port = Number(args[1]);
+  if (port < 1024 || port > 65_535) throw new Error(usage);
+  return port;
+};
+
+/**
+ * A Watch with sample checks in a new folder, on this machine only, reaching nothing real: every
+ * command and request gets a canned answer, and as a sample Watch it takes no key, makes no secret
+ * and does not scan. Its folder goes when it stops.
+ */
+const demo = async (args: ReadonlyArray<string>) => {
+  const port = demoPort(args);
+  // The demo stays on this machine and in its own folder, whatever the environment says.
+  delete process.env.T3_WATCH_HOST;
+  delete process.env.T3_WATCH_PORT;
+  const home = mkdtempSync(join(tmpdir(), "t3-watch-demo-"));
+  // However the demo ends, short of a kill no process can catch, its folder goes with it: serve
+  // stops on every signal that can be caught, and every stop ends here.
+  process.on("exit", () => rmSync(home, { recursive: true, force: true }));
+  // Its scan reads AWS profiles from a file of its own, never the person's.
+  const awsConfig = join(home, "aws-config");
+  writeFileSync(awsConfig, DEMO_AWS_CONFIG);
+  process.env.AWS_CONFIG_FILE = awsConfig;
+  saveConfig({ ...loadConfig(home), port, host: "127.0.0.1", roots: [], publicUrl: null, reads: DEMO_READS }, home);
+  try {
+    await serve(home, {
+      deps: demoDeps(),
+      sample: true,
+      signInHelp: DEMO_SIGN_IN_HELP,
+      prepare: (watch, config) => seedDemo(watch, pageUrl(config)),
+      announce: (config) => {
+        console.log(`The Watch demo runs at ${pageUrl(config)} with sample checks. Nothing in it reaches a real account or leaves this machine.`);
+        console.log(`Open it with this link, once, within ${SIGN_IN_MINUTES} minutes: ${freshSignInLink(home, config)}`);
+        console.log(`Its sample data lives in ${home} until it stops. For a new link, stop it and start it again.`);
+        console.log("Stop it with Ctrl-C, which also removes its folder.");
+      },
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") throw new Error(`Port ${port} is taken. Try t3-watch demo --port and another number.`);
+    throw error;
+  }
 };
 
 const PROBE_MS = 3000;
@@ -638,12 +727,15 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch alerts      Say where alerts go and how the last test alert went
   t3-watch alerts test Send a signed test alert and say whether the webhook accepted it
   t3-watch mcp         MCP over stdio, for agents (install registers this)
+  t3-watch demo        A Watch with sample checks on this machine, to try the page; it reaches
+                       nothing real and removes itself when stopped. --port to choose the port
 `;
 
 export const main = async (args: ReadonlyArray<string>) => {
   const command = args[0] ?? "help";
   try {
     if (command === "start") await start();
+    else if (command === "demo") await demo(args.slice(1));
     else if (command === "install" || command === "uninstall") {
       const known = command === "install" ? ["--all", "--no-tailscale", "--no-project"] : ["--all"];
       const unknown = args.slice(1).filter((arg) => !known.includes(arg));

@@ -1,7 +1,9 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { makeWatch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
+import { DEMO_SIGN_IN_HELP } from "./demo.ts";
 import { makeHttpServer } from "./http.ts";
 import { makeSignInCode, startSession } from "./signin.ts";
 import { fakeDeps, testWatch } from "./testkit.ts";
@@ -118,6 +120,28 @@ describe("http", () => {
     expect((await fetch(`${base}/hb/${PING_TOKEN}`, { method: "POST" })).status).toBe(200);
     expect(watch.store.lastHeartbeat("h", "success")).not.toBeNull();
     expect((await fetch(`${base}/hb/zzzzzzzzzzzzzzzzzzzz`)).status).toBe(404);
+  });
+
+  it("gives a demo its own session cookie, kept until the browser closes, and its own sign-in words", async () => {
+    const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fakeDeps({}).deps, sample: true });
+    const server = makeHttpServer({ watch, config: () => config, webDir: "/nonexistent", signInHelp: DEMO_SIGN_IN_HELP });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    servers.push(server);
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const pressed = await fetch(`${base}/signin`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
+      body: new URLSearchParams({ code: makeSignInCode(watch.store, watch.deps.now()) }).toString(),
+    });
+    const set = pressed.headers.get("set-cookie")!;
+    expect(set).toMatch(/^t3w-demo=[^;]+; Path=\/; HttpOnly; SameSite=Lax$/);
+    const session = set.split(";")[0]!.split("=")[1]!;
+    expect((await fetch(`${base}/api/state`, { headers: { cookie: `t3w-demo=${session}` } })).status).toBe(200);
+    // A real Watch's cookie on the same host is a different one, so neither replaces the other.
+    expect((await fetch(`${base}/api/state`, { headers: { cookie: `t3w=${session}` } })).status).toBe(401);
+    expect(((await (await fetch(`${base}/api/state`)).json()) as { error: string }).error).toBe("Sign in to the demo with the link it printed when it started");
+    expect(await (await fetch(`${base}/signin?code=spent`)).text()).toContain("Stop the demo and start it again for a new link.");
   });
 
   it("edits, deletes and restores checks for a browser on the page only", async () => {

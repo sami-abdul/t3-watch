@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { type WatchCore as Watch, WatchError } from "./app.ts";
+import { SAMPLE_ONLY, type WatchCore as Watch, WatchError } from "./app.ts";
 import { ALL_READS, type Reads } from "./config.ts";
 import { NO_RUNS_NOTE } from "./notices.ts";
 import type { Check, KeyRecord } from "./store.ts";
@@ -692,6 +692,7 @@ export const makeScanner = (
   return {
     status: () => status,
     start: () => {
+      if (watch.sample) throw new WatchError(SAMPLE_ONLY.reads, 403);
       if (current !== null) return current;
       if (!chosen() && watch.store.getKv<Scan | null>("scan", null) === null) throw new WatchError(NOT_CHOSEN, 409);
       status = { running: true, step: "Starting", error: null };
