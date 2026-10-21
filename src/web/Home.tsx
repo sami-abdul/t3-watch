@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "../server/notices.ts";
 import { pendingText } from "../server/pending.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import type { WatchClient } from "./client.ts";
@@ -81,14 +82,12 @@ export function Home({
       </div>
       {state.link.offlineSince !== null ? (
         <Muted className="text-foreground">
-          Watch lost its internet connection {ago(state.link.offlineSince, now)}. Failures of checks that need it are held for up to an hour each,
-          and nothing alerts meanwhile.
+          Watch lost its internet connection {ago(state.link.offlineSince, now)}. {HELD_NOTICE}
         </Muted>
       ) : null}
       {state.link.probesDisagree ? (
         <Muted className="text-foreground">
-          Watch's probe addresses do not answer while checks that need the internet pass, so it is not holding failures. If
-          this network blocks them, set probeUrls in ~/.t3-watch/config.json.
+          {PROBES_DISAGREE_NOTICE}
         </Muted>
       ) : null}
       {notice !== null ? <Muted className="text-foreground">{notice}</Muted> : null}

@@ -1,6 +1,7 @@
 import { alertSettings } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
+import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
 import type { Check } from "./store.ts";
 
@@ -69,13 +70,10 @@ export const homeText = (state: WatchState) => {
         ? `All clear: ${passing} of ${on.length} checks passing.`
         : `${failing.length} broken, ${passing} passing, ${on.length} on.`,
   ];
-  if (state.link.probesDisagree)
-    lines.unshift(
-      "Watch's probe addresses do not answer while checks that need the internet pass, so it is not holding failures. If this network blocks them, set probeUrls in config.json.",
-    );
+  if (state.link.probesDisagree) lines.unshift(PROBES_DISAGREE_NOTICE);
   if (state.link.offlineSince !== null)
     lines.unshift(
-      `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. Failures of checks that need it are held for up to an hour each, and nothing alerts meanwhile.`,
+      `Watch cannot reach the internet since ${state.link.offlineSince.slice(0, 16).replace("T", " ")} UTC. ${HELD_NOTICE}`,
     );
   if (failing.length > 0) lines.push("", "Broken:", ...failing.map(line));
   if (unknown.length > 0) lines.push("", "Could not run:", ...unknown.map(line));

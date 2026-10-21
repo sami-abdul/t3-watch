@@ -109,6 +109,14 @@
       status say the probe addresses do not answer while such checks pass, and point at
       `probeUrls`.
 - [x] 7.3 `README.md`: the probe-list notice.
+- [x] 7.5 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: the doubt lasts until a
+      probe answers or a restart, a passing check rechecks the list at most every 5 minutes while
+      it lasts, and a recheck that began before a newer answer counts nothing.
+- [x] 7.6 `src/server/notices.ts`, `src/server/state.ts`, `src/web/Home.tsx`, `README.md`: the
+      notices share one wording with the config path, and the README says a restart clears the
+      doubt too.
+- [x] 7.7 `src/server/runner.ts`, `src/server/runner.test.ts`: the runner awaits the recheck, so the
+      test syncs on it instead of a timer.
 - [ ] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance with a probe address that refuses and a check that reaches the
       internet, a failing check is recorded once the list is flagged, and Home shows the notice.

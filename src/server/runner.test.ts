@@ -441,10 +441,9 @@ describe("runner while Watch is offline", () => {
       await watch.runner.tick();
       expect(watch.store.check("site")!.lastOutcome).toBe("pass");
       await watch.setCheck("other", "run");
-      await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true });
-    expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in config\.json\.$/);
+    expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in Watch's config\.json/);
     // No longer held: the next two failing runs fail the site and alert.
     fake.advance(61);
     await watch.runner.tick();

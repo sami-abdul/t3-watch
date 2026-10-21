@@ -23,6 +23,8 @@ const OFFLINE_LAPSE_MS = 30 * 60_000;
 export const MAX_HOLD_MS = 60 * 60_000;
 /** Two disagreements within this long mean the probe list is wrong for this network. */
 const DISAGREE_SPAN_MS = 60 * 60_000;
+/** While the list is in doubt, a passing check rechecks it this often, so a fixed list clears it. */
+const RECHECK_MS = 5 * 60_000;
 
 export interface Link {
   /** When Watch found it could not reach the internet, or null while it can. */
@@ -84,13 +86,25 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   let probe: { readonly at: number; readonly answer: Promise<boolean> } | null = null;
   // When fresh probes failed right after a check reached the internet, in the last hour.
   let disagreements: ReadonlyArray<number> = [];
+  // Set by the second disagreement in an hour; only a probe that answers, or a restart, clears it.
+  let doubtedSince: number | null = null;
+  let lastAnswerAt = Number.NEGATIVE_INFINITY;
+  let lastVerifyAt = Number.NEGATIVE_INFINITY;
   let verifying: Promise<void> | null = null;
 
   /** When the current offline spell began, while a failed probe in the last 30 minutes vouches for it. */
   const since = () => (offlineSince !== null && now() - lastFailedProbeAt <= OFFLINE_LAPSE_MS ? offlineSince : null);
 
-  /** Whether the probe list has disagreed with passing checks twice in the last hour. */
-  const doubted = () => disagreements.filter((at) => now() - at <= DISAGREE_SPAN_MS).length >= 2;
+  const doubted = () => doubtedSince !== null;
+  const answered = () => {
+    lastAnswerAt = now();
+    disagreements = [];
+    doubtedSince = null;
+  };
+  const disagree = (at: number) => {
+    disagreements = [...disagreements.filter((t) => at - t <= DISAGREE_SPAN_MS), at];
+    if (disagreements.length >= 2) doubtedSince ??= at;
+  };
 
   /** True when any address answers at all; an empty list never counts as offline. */
   const reach = async (urls: ReadonlyArray<string>) => {
@@ -112,7 +126,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     const startedAt = now();
     if (probe !== null && startedAt - probe.at <= PROBE_REUSE_MS) return probe.answer;
     const answer = reach(probeUrls(setting())).then((online) => {
-      if (online) disagreements = [];
+      if (online) answered();
       // A check that passed while the probe ran is newer evidence than the probe.
       if (online || lastPassAt >= startedAt) {
         offlineSince = null;
@@ -130,15 +144,21 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
    * Watch counted itself offline, yet a check just reached the internet. A fresh probe that still
    * gets no answer disagrees with that check: this network may block the probe addresses.
    */
-  const verify = () =>
-    (verifying ??= reach(probeUrls(setting()))
+  const verify = () => {
+    if (verifying !== null) return verifying;
+    const startedAt = now();
+    lastVerifyAt = startedAt;
+    verifying = reach(probeUrls(setting()))
       .then((online) => {
-        const at = now();
-        disagreements = online ? [] : [...disagreements.filter((t) => at - t <= DISAGREE_SPAN_MS), at];
+        if (online) answered();
+        // A probe that answered after this one began is newer evidence, so this one counts nothing.
+        else if (lastAnswerAt < startedAt) disagree(now());
       })
       .finally(() => {
         verifying = null;
-      }));
+      });
+    return verifying;
+  };
 
   /** When the current offline spell began, unless the probe list is in doubt. */
   const offlineFrom = () => (doubted() ? null : since());
@@ -150,13 +170,14 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     },
     /**
      * A check that needs the internet passed, which proves the link works. When Watch counted
-     * itself offline, it also probes again; the returned promise settles when that is done.
+     * itself offline it also probes again, and while the probe list is in doubt it rechecks the
+     * list every 5 minutes; the returned promise settles when that probe is done.
      */
     sawInternet: (): Promise<void> => {
-      const wasOffline = since() !== null;
+      const wasOffline = offlineFrom() !== null;
       lastPassAt = now();
       offlineSince = null;
-      return wasOffline ? verify() : Promise.resolve();
+      return wasOffline || (doubted() && now() - lastVerifyAt >= RECHECK_MS) ? verify() : Promise.resolve();
     },
     /** Whether Watch counts itself offline, without probing. */
     offline: () => offlineFrom() !== null,

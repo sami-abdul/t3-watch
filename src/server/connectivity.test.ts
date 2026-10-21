@@ -80,6 +80,59 @@ describe("connectivity", () => {
     expect(link.link().probesDisagree).toBe(false);
   });
 
+  it("keeps the doubt past an hour, rechecking the list every 5 minutes until it answers", async () => {
+    const { link, net, advance } = setup();
+    net.up = false;
+    await link.hold();
+    await link.sawInternet();
+    advance(16);
+    await link.hold();
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(true);
+    advance(2 * 3600);
+    expect(link.link().probesDisagree).toBe(true);
+    // One recheck now, none a minute later, and once the list answers the doubt clears.
+    const probes = net.calls.length;
+    await link.sawInternet();
+    expect(net.calls.length).toBeGreaterThan(probes);
+    const rechecked = net.calls.length;
+    advance(60);
+    await link.sawInternet();
+    expect(net.calls).toHaveLength(rechecked);
+    net.up = true;
+    advance(5 * 60);
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
+  it("counts nothing from a slow recheck once a newer probe has answered", async () => {
+    const net = { up: false, hang: false };
+    const hanging: Array<(error: Error) => void> = [];
+    const fake = fakeDeps({
+      fetch: () => {
+        if (net.hang) return new Promise<Response>((_resolve, reject) => hanging.push(reject));
+        if (!net.up) throw new TypeError("fetch failed");
+        return new Response(null, { status: 204 });
+      },
+    });
+    const link = makeConnectivity(fake.deps);
+    expect(await link.hold()).toBe(true);
+    net.hang = true;
+    const slow = link.sawInternet();
+    net.hang = false;
+    net.up = true;
+    fake.advance(16);
+    expect(await link.hold()).toBe(false);
+    for (const reject of hanging) reject(new TypeError("fetch failed"));
+    await slow;
+    // One real disagreement now would make two if the slow recheck had counted.
+    net.up = false;
+    fake.advance(16);
+    await link.hold();
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(false);
+  });
+
   it("counts no disagreement when an outage simply ends", async () => {
     const { link, net, advance } = setup();
     for (let i = 0; i < 2; i++) {

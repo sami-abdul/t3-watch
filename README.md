@@ -76,7 +76,7 @@ in case the probe addresses are what is blocked.
 If your network blocks those two addresses, list ones it allows as `probeUrls` in
 `~/.t3-watch/config.json` and restart Watch. An empty list turns holding off. Watch notices a
 blocked list on its own: when the addresses fail twice in an hour right after a check reached the
-internet, it stops holding and says so on Home until one of them answers.
+internet, it stops holding and says so on Home until one of them answers or Watch restarts.
 
 ## Vendors
 
