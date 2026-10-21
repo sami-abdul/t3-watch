@@ -87,23 +87,26 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   // When fresh probes failed right after a check reached the internet, in the last hour.
   let disagreements: ReadonlyArray<number> = [];
   // Set by the second disagreement in an hour; only a probe that answers, or a restart, clears it.
-  let doubtedSince: number | null = null;
+  let doubted = false;
   let lastAnswerAt = Number.NEGATIVE_INFINITY;
+  let lastDisagreeAt = Number.NEGATIVE_INFINITY;
   let lastVerifyAt = Number.NEGATIVE_INFINITY;
   let verifying: Promise<void> | null = null;
 
   /** When the current offline spell began, while a failed probe in the last 30 minutes vouches for it. */
   const since = () => (offlineSince !== null && now() - lastFailedProbeAt <= OFFLINE_LAPSE_MS ? offlineSince : null);
 
-  const doubted = () => doubtedSince !== null;
-  const answered = () => {
+  /** A probe that began at `startedAt` answered. A disagreement newer than its start outranks it. */
+  const answered = (startedAt: number) => {
     lastAnswerAt = now();
+    if (startedAt < lastDisagreeAt) return;
     disagreements = [];
-    doubtedSince = null;
+    doubted = false;
   };
   const disagree = (at: number) => {
+    lastDisagreeAt = at;
     disagreements = [...disagreements.filter((t) => at - t <= DISAGREE_SPAN_MS), at];
-    if (disagreements.length >= 2) doubtedSince ??= at;
+    if (disagreements.length >= 2) doubted = true;
   };
 
   /** True when any address answers at all; an empty list never counts as offline. */
@@ -126,7 +129,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     const startedAt = now();
     if (probe !== null && startedAt - probe.at <= PROBE_REUSE_MS) return probe.answer;
     const answer = reach(probeUrls(setting())).then((online) => {
-      if (online) answered();
+      if (online) answered(startedAt);
       // A check that passed while the probe ran is newer evidence than the probe.
       if (online || lastPassAt >= startedAt) {
         offlineSince = null;
@@ -150,7 +153,7 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
     lastVerifyAt = startedAt;
     verifying = reach(probeUrls(setting()))
       .then((online) => {
-        if (online) answered();
+        if (online) answered(startedAt);
         // A probe that answered after this one began is newer evidence, so this one counts nothing.
         else if (lastAnswerAt < startedAt) disagree(now());
       })
@@ -161,12 +164,12 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
   };
 
   /** When the current offline spell began, unless the probe list is in doubt. */
-  const offlineFrom = () => (doubted() ? null : since());
+  const offlineFrom = () => (doubted ? null : since());
 
   return {
     link: (): Link => {
       const from = offlineFrom();
-      return { offlineSince: from === null ? null : new Date(from).toISOString(), probesDisagree: doubted() };
+      return { offlineSince: from === null ? null : new Date(from).toISOString(), probesDisagree: doubted };
     },
     /**
      * A check that needs the internet passed, which proves the link works. When Watch counted
@@ -177,8 +180,10 @@ export const makeConnectivity = (deps: Deps, setting: () => unknown = () => unde
       const wasOffline = offlineFrom() !== null;
       lastPassAt = now();
       offlineSince = null;
-      return wasOffline || (doubted() && now() - lastVerifyAt >= RECHECK_MS) ? verify() : Promise.resolve();
+      return wasOffline || (doubted && now() - lastVerifyAt >= RECHECK_MS) ? verify() : Promise.resolve();
     },
+    /** Settles when a recheck of the probe list in flight is done, for callers that need its result. */
+    settled: (): Promise<void> => verifying ?? Promise.resolve(),
     /** Whether Watch counts itself offline, without probing. */
     offline: () => offlineFrom() !== null,
     /**

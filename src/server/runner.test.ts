@@ -441,6 +441,7 @@ describe("runner while Watch is offline", () => {
       await watch.runner.tick();
       expect(watch.store.check("site")!.lastOutcome).toBe("pass");
       await watch.setCheck("other", "run");
+      await watch.linkSettled();
     }
     expect(watch.link()).toEqual({ offlineSince: null, probesDisagree: true });
     expect(homeText(readState(watch)).split("\n")[0]).toMatch(/^Watch's probe addresses do not answer .* set probeUrls in Watch's config\.json/);

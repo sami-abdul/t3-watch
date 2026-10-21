@@ -117,6 +117,11 @@
       doubt too.
 - [x] 7.7 `src/server/runner.ts`, `src/server/runner.test.ts`: the runner awaits the recheck, so the
       test syncs on it instead of a timer.
+- [x] 7.8 `src/server/connectivity.ts`, `src/server/connectivity.test.ts`: an answer from a probe
+      that began before the latest disagreement does not clear the doubt, and the doubt is a flag.
+- [x] 7.9 `src/server/runner.ts`, `src/server/app.ts`, `src/server/notices.ts`,
+      `src/server/runner.test.ts`: the runner no longer waits on the recheck, tests sync through
+      `linkSettled`, and the notice names the `T3_WATCH_HOME` folder.
 - [ ] 7.4 `pnpm test`; `pnpm typecheck`; `pnpm build`; `openspec validate add-connectivity-hold --strict`;
       on a throwaway instance with a probe address that refuses and a check that reaches the
       internet, a failing check is recorded once the list is flagged, and Home shows the notice.

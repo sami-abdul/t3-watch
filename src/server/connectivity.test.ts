@@ -133,6 +133,35 @@ describe("connectivity", () => {
     expect(link.link().probesDisagree).toBe(false);
   });
 
+  it("does not let an answer from a probe begun before a newer disagreement clear it", async () => {
+    const net = { up: false, hang: false };
+    const hanging: Array<(response: Response) => void> = [];
+    const fake = fakeDeps({
+      fetch: () => {
+        if (net.hang) return new Promise<Response>((resolve) => hanging.push(resolve));
+        if (!net.up) throw new TypeError("fetch failed");
+        return new Response(null, { status: 204 });
+      },
+    });
+    const link = makeConnectivity(fake.deps);
+    await link.hold();
+    await link.sawInternet();
+    fake.advance(16);
+    await link.hold();
+    // A probe begins and hangs; then a check passes and the fresh probe fails: the second disagreement.
+    fake.advance(16);
+    net.hang = true;
+    const older = link.hold();
+    net.hang = false;
+    fake.advance(1);
+    await link.sawInternet();
+    expect(link.link().probesDisagree).toBe(true);
+    // The older probe answers late, and the doubt stays.
+    for (const resolve of hanging) resolve(new Response(null, { status: 204 }));
+    await older;
+    expect(link.link().probesDisagree).toBe(true);
+  });
+
   it("counts no disagreement when an outage simply ends", async () => {
     const { link, net, advance } = setup();
     for (let i = 0; i < 2; i++) {
