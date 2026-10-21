@@ -1,6 +1,6 @@
 {
   "name": "@lfg-labs/t3-watch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Watches the systems you run, sets itself up from your projects, and talks to your agents over MCP.",
   "license": "MIT",
   "author": "Abdul Sami",

@@ -12,7 +12,7 @@ import { App } from "./App.tsx";
 import type { SetupView, WatchClient, WatchState } from "./client.ts";
 import "./index.css";
 
-const app = new McpApp({ name: "t3-watch", version: "0.2.0" });
+const app = new McpApp({ name: "t3-watch", version: "0.3.0" });
 let pageUrl: string | null = null;
 
 const call = async (name: string, args: Record<string, unknown> = {}) => {
