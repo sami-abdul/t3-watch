@@ -15,6 +15,6 @@
 - [x] 2.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 8, 10 and 8; 25 fixed, 1 declined in `.wattson/decisions.md`. The scratch run
       after them found two more, a missing home and a multi-line error, both fixed.
-- [ ] 2.3 The real `claude` and `codex` CLIs register Watch in scratch homes from a scratch T3
+- [x] 2.3 The real `claude` and `codex` CLIs register Watch in scratch homes from a scratch T3
       settings file, an inherited `CLAUDE_CONFIG_DIR` among them, and remove it again; the live
       Watch restarts briefly with its alert settings intact and 22 of 22 checks passing.
