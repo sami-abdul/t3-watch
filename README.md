@@ -56,14 +56,18 @@ Things to ask:
 - "Make sure the nightly import ran." The agent drafts a check, runs it once, and leaves it for you
   to turn on.
 - "Watch Missive too." The agent writes a vendor description and tests it with your key.
-- "Set up alerts." First press **Make a signing secret** under Alerts in the page's Details. The
-  agent asks you to paste it into a private T3 card, creates a T3 webhook task bound to the
-  thread that checks Watch's signature, and gives Watch the task's address. The secret never
-  passes through the chat, and Watch refuses one sent over MCP. From then on, a check that starts
-  failing, recovers or can't run wakes the thread, and the agent looks into it before you open
-  it. Checks that keep passing send nothing. A check that was passing counts as failing only
-  when two runs in a row do not pass; Watch runs it again within a minute of the first, so one
-  dropped request wakes nobody. A recovery counts at once.
+- "Set up alerts." Alerts in the page's Details walks you through three steps. Press **Make a
+  signing secret**, which the page shows once. Say "Set up alerts" here: the agent creates a T3
+  webhook task bound to the thread that checks Watch's signature, asks you to paste the secret
+  into a private T3 card, gives Watch the task's address, and sends a test alert. The task
+  accepts it only when it holds Watch's secret. **Send a test alert** on the page, or
+  `t3-watch alerts test` in a terminal, sends another whenever you want to check, and
+  `t3-watch alerts` says how the last one went. The secret never passes through the chat, Watch
+  refuses one sent over MCP, and only the webhook's host shows on the page. From then on, a check that starts failing, recovers or can't
+  run wakes the thread, and the agent looks into it before you open it. Checks that keep passing
+  send nothing. A check that was passing counts as failing only when two runs in a row do not
+  pass; Watch runs it again within a minute of the first, so one dropped request wakes nobody. A
+  recovery counts at once.
 
 ## When Watch's own connection drops
 

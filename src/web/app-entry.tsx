@@ -6,6 +6,7 @@ import { App as McpApp } from "@modelcontextprotocol/ext-apps";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import type { AlertResult } from "../server/alerts.ts";
 import type { Run } from "../server/store.ts";
 import { App } from "./App.tsx";
 import type { WatchClient, WatchState } from "./client.ts";
@@ -52,6 +53,7 @@ const mcpClient: WatchClient = {
   roots: null,
   saveRoots: null,
   makeAlertSecret: null,
+  testAlert: async () => (await call("watch_test_alert")).structuredContent as unknown as AlertResult,
   ask: async (text) => {
     await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
     return "Sent to the Watch thread.";

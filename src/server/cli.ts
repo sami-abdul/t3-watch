@@ -3,12 +3,14 @@ import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { alertHost } from "./alerts.ts";
 import { makeWatch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { listenHosts, loadConfig, localUrl, pageUrl, watchHome } from "./config.ts";
 import { makeHttpServer } from "./http.ts";
 import { liveDeps, runProc } from "./proc.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
+import type { WatchState } from "./state.ts";
 import { openStore } from "./store.ts";
 import { extendServer } from "./extend.ts";
 
@@ -107,16 +109,26 @@ const isCheck = (value: unknown): value is ProbeCheck =>
 
 const NOT_STATE = "something other than Watch's state";
 
-export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> => {
-  let response: Response;
+/** One request to the local service with this folder's token: its answer, or why there was none. */
+const askWatch = async (config: WatchConfig, path: string, ms: number, post = false): Promise<Response | "slow" | "absent"> => {
   try {
-    response = await fetch(`${localUrl(config)}/api/state`, {
-      headers: { authorization: `Bearer ${config.token}` },
+    return await fetch(`${localUrl(config)}${path}`, {
+      method: post ? "POST" : "GET",
+      headers: { authorization: `Bearer ${config.token}`, ...(post ? { "content-type": "application/json" } : {}) },
+      ...(post ? { body: "{}" } : {}),
       signal: AbortSignal.timeout(ms),
     });
   } catch (error) {
-    return { kind: timedOut(error) ? "slow" : "absent" };
+    return timedOut(error) ? "slow" : "absent";
   }
+};
+
+const refusedText = (config: WatchConfig, home: string) =>
+  `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${home}.`;
+
+export const probe = async (config: WatchConfig, ms = PROBE_MS): Promise<Probe> => {
+  const response = await askWatch(config, "/api/state", ms);
+  if (typeof response === "string") return { kind: response };
   if (!response.ok) {
     // An unread body would hold the connection open and keep the CLI from exiting.
     void response.body?.cancel().catch(() => {});
@@ -284,12 +296,86 @@ const status = async () => {
     result.kind === "slow"
       ? `Watch did not answer at ${localUrl(config)} within ${PROBE_MS / 1000} seconds. It may be busy; try again.`
       : result.kind === "refused"
-        ? `Something at ${localUrl(config)} refused this folder's token, so it is not the Watch for ${home}.`
+        ? refusedText(config, home)
         : result.kind === "unexpected"
           ? `${localUrl(config)} answered with ${result.answer}. If that is Watch, its log says why; if not, another program holds the port.`
           : "Not running. Start it with t3-watch start, or t3-watch install.",
   );
   process.exitCode = 1;
+};
+
+type AlertsView = WatchState["alerts"];
+
+/** Where alerts go and how the last test went, or with `test`, a test alert through the service. */
+const alerts = async (sub: string | undefined) => {
+  if (sub !== undefined && sub !== "test") {
+    console.error(`t3-watch alerts takes no "${sub}". Try t3-watch alerts, or t3-watch alerts test.`);
+    process.exitCode = 1;
+    return;
+  }
+  const home = watchHome();
+  if (!holdsWatch(home)) {
+    console.error(`No Watch in ${home}. Set it up with t3-watch install.`);
+    process.exitCode = 1;
+    return;
+  }
+  const config = loadConfig(home);
+  // The webhook gets 10 seconds to answer a test; the rest is room for the service.
+  const response = await askWatch(config, sub === "test" ? "/api/alerts/test" : "/api/state", 20_000, sub === "test");
+  if (typeof response === "string") {
+    console.error(
+      response === "slow"
+        ? `Watch did not answer at ${localUrl(config)} within 20 seconds.`
+        : `Watch is not running at ${localUrl(config)}. Start it with t3-watch start, or t3-watch install.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (response.status === 401 || response.status === 403) {
+    void response.body?.cancel().catch(() => {});
+    console.error(refusedText(config, home));
+    process.exitCode = 1;
+    return;
+  }
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    ok?: boolean;
+    message?: string;
+    alerts?: AlertsView;
+  };
+  if (!response.ok) {
+    console.error(
+      sub === "test" && response.status === 404
+        ? "This Watch does not send test alerts yet. Restart it after the upgrade: t3-watch install, or systemctl --user restart t3-watch."
+        : (body.error ?? `Watch answered HTTP ${response.status}`),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (sub === "test") {
+    console.log(body.message ?? "Watch sent the test but gave no result.");
+    if (body.ok !== true) process.exitCode = 1;
+    return;
+  }
+  // A service not yet restarted after an upgrade still sends the address instead of on and host.
+  const sent = body.alerts as (Partial<AlertsView> & { url?: string | null }) | undefined;
+  const view: AlertsView | undefined =
+    sent === undefined
+      ? undefined
+      : {
+          on: sent.on ?? (sent.url !== undefined && sent.url !== null),
+          host: sent.host ?? alertHost(sent.url ?? null),
+          signed: sent.signed ?? false,
+          lastTest: sent.lastTest ?? null,
+          lastDelivery: sent.lastDelivery ?? null,
+        };
+  if (view === undefined || !view.on) {
+    console.log("Alerts are off. Connect them on the page: Details, then Alerts.");
+    return;
+  }
+  console.log(`Alerts go to ${view.host ?? "an unreadable address"}, ${view.signed ? "signed" : "not signed"}.`);
+  console.log(view.lastTest === null ? "No test alert since they were set. Send one with t3-watch alerts test." : `Last test at ${view.lastTest.at}: ${view.lastTest.message}`);
+  if (view.lastDelivery !== null) console.log(`Last alert at ${view.lastDelivery.at}: ${view.lastDelivery.message}`);
 };
 
 const HELP = `t3-watch: watches the systems you run.
@@ -300,6 +386,8 @@ const HELP = `t3-watch: watches the systems you run.
   t3-watch url         Print a one-time sign-in link for the page
   t3-watch signout     Sign every browser out of the page; agents keep working
   t3-watch status      Say whether it is running and what is failing
+  t3-watch alerts      Say where alerts go and how the last test alert went
+  t3-watch alerts test Send a signed test alert and say whether the webhook accepted it
   t3-watch mcp         MCP over stdio, for agents (install registers this)
 `;
 
@@ -342,6 +430,7 @@ export const main = async (args: ReadonlyArray<string>) => {
         console.error(`No Watch answers for ${home}, so the link works only once Watch runs with that folder.`);
     }
     else if (command === "status") await status();
+    else if (command === "alerts") await alerts(args[1]);
     else if (command === "mcp") await (await import("./mcp-relay.ts")).relay();
     else console.log(HELP);
   } catch (error) {

@@ -129,3 +129,52 @@ export const ago = (iso: string | null, now: Date) => {
 
 export const askAbout = (check: CheckView) =>
   `Watch: "${check.intent}" (${check.serviceLabel}) is ${check.lastOutcome === "fail" ? "failing" : "not running"}: ${check.lastSummary ?? ""}. Look into it with watch_check ${check.id}, tell me why, and what to do.`;
+
+export type StepState = "done" | "current" | "waiting";
+
+type Alerts = WatchState["alerts"];
+
+/** The newer of the last test and the last real alert: what is known about the webhook now. */
+export const latestAlertResult = (alerts: Alerts) =>
+  [alerts.lastTest, alerts.lastDelivery]
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at))[0] ?? null;
+
+/**
+ * The Connect alerts panel's three steps: a signing secret, a webhook address from the Watch
+ * thread, and a signed alert the webhook accepted. A step waits until the one before it is done.
+ */
+export const alertSteps = (alerts: Alerts) => {
+  const secret: StepState = alerts.signed ? "done" : "current";
+  const connected: StepState = alerts.on ? "done" : alerts.signed ? "current" : "waiting";
+  // An unsigned alert that got through proves the address, not the signature.
+  const tested: StepState = alerts.on && alerts.signed && latestAlertResult(alerts)?.ok === true ? "done" : alerts.on ? "current" : "waiting";
+  return { secret, connected, tested };
+};
+
+/**
+ * What Home says about alerts, and its button: off while checks are on, unsigned, never tested
+ * since they were set or the secret changed, or the latest test or real alert not accepted.
+ */
+export const alertsNotice = (state: WatchState): { readonly text: string; readonly button: string } | null => {
+  const alerts = state.alerts;
+  if (!alerts.on)
+    return state.checks.some((c) => c.state === "on")
+      ? { text: "Alerts are off, so nothing wakes your Watch thread when a check fails.", button: "Connect alerts" }
+      : null;
+  if (!alerts.signed) return { text: "Alerts are not signed, so their T3 task cannot tell Watch's alerts from anyone else's.", button: "Fix alerts" };
+  const latest = latestAlertResult(alerts);
+  if (latest === null)
+    return {
+      text: "Alerts have not been tested since they were set up or their secret changed. A test alert shows whether they reach your Watch thread.",
+      button: "Test alerts",
+    };
+  if (latest.ok) return null;
+  return {
+    text: latest === alerts.lastTest ? `The last test alert was not accepted. ${latest.message}` : `The last alert did not get through. ${latest.message}`,
+    button: "Fix alerts",
+  };
+};
+
+/** A secret made on this page while alerts are on: the T3 task needs it until an alert gets through. */
+export const needsHandover = (alerts: Alerts, madeSecret: boolean) => madeSecret && alerts.on && latestAlertResult(alerts)?.ok !== true;

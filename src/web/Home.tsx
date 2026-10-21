@@ -6,7 +6,7 @@ import type { CheckView, WatchState } from "../server/state.ts";
 import type { WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
-import { ago, askAbout, homeModel } from "./logic.ts";
+import { ago, alertsNotice, askAbout, homeModel } from "./logic.ts";
 import { Heading, Muted, outcomeTone, RowList, Section } from "./ui.tsx";
 
 const tomorrow = (now: Date) => new Date(now.getTime() + 24 * 3600 * 1000).toISOString();
@@ -22,9 +22,11 @@ export function Home({
   readonly state: WatchState;
   readonly refresh: () => void;
   readonly onAddServices: () => void;
-  readonly onDetails: () => void;
+  /** Opens Details, scrolled to a section when one is named. */
+  readonly onDetails: (focus?: "alerts") => void;
 }) {
   const model = homeModel(state);
+  const alertsNote = alertsNotice(state);
   const now = new Date(state.generatedAt);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -89,6 +91,14 @@ export function Home({
         <Muted className="text-foreground">
           {PROBES_DISAGREE_NOTICE}
         </Muted>
+      ) : null}
+      {alertsNote !== null ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Muted className="text-foreground">{alertsNote.text}</Muted>
+          <Button size="compact" variant="secondary" onClick={() => onDetails("alerts")}>
+            {alertsNote.button}
+          </Button>
+        </div>
       ) : null}
       {notice !== null ? <Muted className="text-foreground">{notice}</Muted> : null}
 
@@ -181,7 +191,7 @@ export function Home({
         <Button variant="secondary" onClick={onAddServices}>
           Add services
         </Button>
-        <Button variant="ghost" onClick={onDetails}>
+        <Button variant="ghost" onClick={() => onDetails()}>
           Details
         </Button>
       </div>

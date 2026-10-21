@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { alertSettings, deliverAlerts, makeAlertSecret, setAlerts } from "./alerts.ts";
+import { alertSettings, deliverAlerts, lastAlertDelivery, lastAlertTest, makeAlertSecret, sendTestAlert, setAlerts } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { WatchConfig } from "./config.ts";
 import { decideDraft, draftCheck, draftVendor } from "./drafts.ts";
@@ -12,6 +12,8 @@ import { makeHttpServer } from "./http.ts";
 import { startSession } from "./signin.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
 
+// A made-up test secret, so the secret scanner may skip it.
+const SIGNING_SECRET = "a-signing-secret-1234"; // gitleaks:allow
 const config: WatchConfig = { port: 0, host: "127.0.0.1", token: "chat-token-123", roots: [], publicUrl: "https://watch.example" };
 const closers: Array<() => void> = [];
 afterEach(() => {
@@ -172,19 +174,24 @@ describe("alerts", () => {
       },
     });
     const watch = testWatch(fake.deps);
-    setAlerts(watch, { url: "https://t3.example/hook", secret: "a-signing-secret-1234" });
+    setAlerts(watch, { url: "https://t3.example/hook", secret: SIGNING_SECRET });
     watch.defineCheck({ id: "site", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
     await watch.runner.tick();
     fake.advance(61);
     await watch.runner.tick();
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
     expect(watch.store.pendingEvents()).toHaveLength(1);
+    // A failed send shows on the page, not only in the queue.
+    expect(lastAlertDelivery(watch)).toMatchObject({ ok: false, status: 500, message: "The webhook answered HTTP 500, so alerts may not arrive." });
     up = true;
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(1);
+    expect(lastAlertDelivery(watch)).toMatchObject({ ok: true, status: 200, message: "The webhook accepted the last alert." });
+    makeAlertSecret(watch);
+    expect(lastAlertDelivery(watch)).toBeNull();
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
     const last = received.at(-1)!;
     expect(JSON.parse(last.body).text).toBe("Watch check failed: Site is up. Answered 500");
-    expect(last.signature).toBe(`sha256=${createHmac("sha256", "a-signing-secret-1234").update(last.body).digest("hex")}`);
+    expect(last.signature).toBe(`sha256=${createHmac("sha256", SIGNING_SECRET).update(last.body).digest("hex")}`);
   });
 
   it("leads with the change, so an intent naming the healthy state still reads right", async () => {
@@ -248,8 +255,30 @@ describe("alerts", () => {
     expect(alertSettings(watch)).toEqual({ url: null, secret });
     // A null secret is what some clients send for a field they leave out.
     const set = await client.callTool({ name: "watch_set_alerts", arguments: { url: "https://t3.example/hook", secret: null } });
-    expect(firstText(set as never)).toBe("Alerts go to https://t3.example/hook, signed.");
+    expect(firstText(set as never)).toBe("Alerts go to t3.example, signed. Confirm the webhook accepts them with watch_test_alert.");
     expect(alertSettings(watch)).toEqual({ url: "https://t3.example/hook", secret });
+  });
+
+  it("keeps no delivery result, and the event, when the settings change while it is out", async () => {
+    let watch: Watch | null = null;
+    const fake = fakeDeps({
+      fetch: (url) => {
+        if (url.hostname === "x.test") return new Response("", { status: 500 });
+        // The person makes a new secret while the alert is on its way, and the task refuses the old one.
+        makeAlertSecret(watch!);
+        return new Response("", { status: 401 });
+      },
+    });
+    watch = testWatch(fake.deps);
+    setAlerts(watch, { url: "https://t3.example/hook", secret: SIGNING_SECRET });
+    watch.defineCheck({ id: "site", serviceId: "s", kind: "http", intent: "Site is up", config: { url: "https://x.test" }, keyId: null, cadenceSeconds: 60, origin: "user" }, "on");
+    await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
+    expect(lastAlertDelivery(watch)).toBeNull();
+    // Still pending, so the next pass sends it signed with the new secret.
+    expect(watch.store.pendingEvents()).toHaveLength(1);
   });
 
   it("sends nothing while checks keep passing", async () => {
@@ -261,5 +290,178 @@ describe("alerts", () => {
     fake.advance(61);
     await watch.runner.tick();
     expect(await deliverAlerts(watch, "https://watch.example")).toBe(0);
+  });
+});
+
+describe("test alerts", () => {
+  const hook = "https://t3.example/hooks/task-capability-123";
+  const webhook = (answer: () => Response) => {
+    const received: Array<{ body: string; signature: string | null; redirect: string | undefined }> = [];
+    const fake = fakeDeps({
+      fetch: (_url, init) => {
+        received.push({ body: String(init.body), signature: new Headers(init.headers).get("x-watch-signature"), redirect: init.redirect });
+        return answer();
+      },
+    });
+    return { fake, received, watch: testWatch(fake.deps) };
+  };
+
+  it("sends a signed test, keeps the result and shows the host, never the address", async () => {
+    const { fake, received, watch } = webhook(() => new Response("", { status: 202 }));
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    const result = await sendTestAlert(watch, "https://watch.example");
+    expect(result).toEqual({ at: "2026-10-15T10:00:00.000Z", ok: true, status: 202, message: "The webhook accepted a signed test alert, so alerts reach the thread it wakes." });
+    const sent = JSON.parse(received[0]!.body);
+    expect(sent.kind).toBe("watch.test");
+    expect(sent.checkId).toBeNull();
+    expect(sent.text).toContain("only a test, so there is no check to look into");
+    expect(received[0]!.signature).toBe(`sha256=${createHmac("sha256", SIGNING_SECRET).update(received[0]!.body).digest("hex")}`);
+    // A redirect is answered, not followed.
+    expect(received[0]!.redirect).toBe("manual");
+    expect(lastAlertTest(watch)).toEqual(result);
+    const { url } = await connect(watch);
+    const state = await (await fetch(new URL("/api/state", url), { headers: { authorization: `Bearer ${config.token}` } })).text();
+    expect(state).not.toContain("task-capability-123");
+    expect(JSON.parse(state).alerts).toEqual({ on: true, host: "t3.example", signed: true, lastTest: result, lastDelivery: null });
+    // Nothing joins the queue of change events.
+    expect(watch.store.pendingEvents()).toHaveLength(0);
+    fake.advance(11);
+  });
+
+  it("says why a webhook refused, did not answer, or is gone", async () => {
+    let answer: () => Response = () => new Response("", { status: 401 });
+    const { fake, watch } = webhook(() => answer());
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    const refused = await sendTestAlert(watch, "https://watch.example");
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toContain("does not have Watch's current signing secret");
+    fake.advance(11);
+    answer = () => {
+      throw new Error("");
+    };
+    expect((await sendTestAlert(watch, "https://watch.example")).message).toBe("Watch could not reach the webhook: no reason given.");
+    fake.advance(11);
+    answer = () => {
+      throw new TypeError("fetch failed", { cause: new Error("getaddrinfo ENOTFOUND t3.example") });
+    };
+    expect((await sendTestAlert(watch, "https://watch.example")).message).toBe("Watch could not reach the webhook: getaddrinfo ENOTFOUND t3.example.");
+    fake.advance(11);
+    answer = () => new Response("", { status: 302, headers: { location: "https://login.example/" } });
+    const redirected = await sendTestAlert(watch, "https://watch.example");
+    expect(redirected.ok).toBe(false);
+    expect(redirected.message).toContain("a redirect, so alerts would not arrive");
+    fake.advance(11);
+    answer = () => new Response("", { status: 404 });
+    expect((await sendTestAlert(watch, "https://watch.example")).message).toContain("its task may be gone");
+    fake.advance(11);
+    setAlerts(watch, { url: hook, secret: null });
+    answer = () => new Response("", { status: 401 });
+    expect((await sendTestAlert(watch, "https://watch.example")).message).toContain("it expects a signature");
+  });
+
+  it("spaces tests apart, refuses one with alerts off, and forgets a result when the secret or address changes", async () => {
+    const { fake, received, watch } = webhook(() => new Response("", { status: 202 }));
+    await expect(sendTestAlert(watch, "https://watch.example")).rejects.toThrow("Alerts are off");
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    await sendTestAlert(watch, "https://watch.example");
+    fake.advance(3);
+    await expect(sendTestAlert(watch, "https://watch.example")).rejects.toThrow("Wait 10 seconds");
+    expect(received).toHaveLength(1);
+    fake.advance(8);
+    await sendTestAlert(watch, "https://watch.example");
+    expect(received).toHaveLength(2);
+    makeAlertSecret(watch);
+    expect(lastAlertTest(watch)).toBeNull();
+    fake.advance(11);
+    await sendTestAlert(watch, "https://watch.example");
+    setAlerts(watch, { url: "https://t3.example/hooks/another" });
+    expect(lastAlertTest(watch)).toBeNull();
+    // New settings do not reset the gap, so the thread still wakes once per 10 seconds.
+    await expect(sendTestAlert(watch, "https://watch.example")).rejects.toThrow("Wait 10 seconds");
+    // The same address again keeps the result.
+    fake.advance(11);
+    await sendTestAlert(watch, "https://watch.example");
+    setAlerts(watch, { url: "https://t3.example/hooks/another" });
+    expect(lastAlertTest(watch)).not.toBeNull();
+  });
+
+  it("follows a redirect that keeps the POST, never down to http, and no other", async () => {
+    const asked: Array<string> = [];
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const fake = fakeDeps({
+      fetch: (url, init) => {
+        asked.push(url.href);
+        signals.push(init.signal);
+        if (url.pathname === "/moved") return new Response("", { status: 308, headers: { location: "/hooks/new" } });
+        if (url.pathname === "/insecure") return new Response("", { status: 307, headers: { location: "http://t3.example/hooks/new" } });
+        if (url.pathname === "/login") return new Response("", { status: 302, headers: { location: "/hooks/new" } });
+        return new Response("", { status: 202 });
+      },
+    });
+    const watch = testWatch(fake.deps);
+    setAlerts(watch, { url: "https://t3.example/moved", secret: SIGNING_SECRET });
+    expect((await sendTestAlert(watch, "https://watch.example")).ok).toBe(true);
+    expect(asked).toEqual(["https://t3.example/moved", "https://t3.example/hooks/new"]);
+    // One deadline covers the whole chain.
+    expect(signals[1]).toBe(signals[0]);
+    for (const path of ["/insecure", "/login"]) {
+      fake.advance(11);
+      asked.length = 0;
+      setAlerts(watch, { url: `https://t3.example${path}` });
+      const result = await sendTestAlert(watch, "https://watch.example");
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain("a redirect, so alerts would not arrive");
+      expect(asked).toEqual([`https://t3.example${path}`]);
+    }
+  });
+
+  it("keeps no result for settings replaced while a test was out", async () => {
+    let release: (response: Response) => void = () => {};
+    const { watch } = webhook(() => new Promise<Response>((resolve) => (release = resolve)) as unknown as Response);
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    const pending = sendTestAlert(watch, "https://watch.example");
+    await expect(sendTestAlert(watch, "https://watch.example")).rejects.toThrow("Wait 10 seconds");
+    makeAlertSecret(watch);
+    release(new Response("", { status: 202 }));
+    expect((await pending).message).toContain("settings changed while it was out");
+    expect(lastAlertTest(watch)).toBeNull();
+  });
+
+  it("takes a test from the token or from the signed-in page itself, never from another site", async () => {
+    const { fake, received, watch } = webhook(() => new Response("", { status: 202 }));
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    const { url } = await connect(watch);
+    const page = { cookie: `t3w=${startSession(watch.store, new Date())}` };
+    const send = (headers: Record<string, string>) => fetch(new URL("/api/alerts/test", url), { method: "POST", headers });
+    expect((await send({})).status).toBe(401);
+    expect((await send({ ...page, origin: "http://evil.test" })).status).toBe(403);
+    expect((await send({ ...page, "sec-fetch-site": "same-site" })).status).toBe(403);
+    expect(received).toHaveLength(0);
+    const fromPage = await send({ ...page, "sec-fetch-site": "same-origin" });
+    expect(fromPage.status).toBe(200);
+    expect(((await fromPage.json()) as { ok: boolean }).ok).toBe(true);
+    fake.advance(11);
+    const byToken = await send({ authorization: `Bearer ${config.token}` });
+    expect(byToken.status).toBe(200);
+    expect((await send({ authorization: `Bearer ${config.token}` })).status).toBe(429);
+    expect(received).toHaveLength(2);
+  });
+
+  it("offers watch_test_alert to agents, naming the host only", async () => {
+    const { watch } = webhook(() => new Response("", { status: 202 }));
+    const { client } = await connect(watch);
+    expect(client.getInstructions()).toContain("watch_test_alert");
+    const off = await client.callTool({ name: "watch_test_alert", arguments: {} });
+    expect(off.isError).toBe(true);
+    setAlerts(watch, { url: hook, secret: SIGNING_SECRET });
+    expect(firstText((await client.callTool({ name: "watch_alerts", arguments: {} })) as never)).toBe(
+      "Alerts go to t3.example, signed. No test alert since they were set: send one with watch_test_alert.",
+    );
+    const tested = await client.callTool({ name: "watch_test_alert", arguments: {} });
+    expect(firstText(tested as never)).toBe("The webhook accepted a signed test alert, so alerts reach the thread it wakes.");
+    expect((tested.structuredContent as { ok: boolean }).ok).toBe(true);
+    const shown = firstText((await client.callTool({ name: "watch_alerts", arguments: {} })) as never);
+    expect(shown).toContain("Last test at 2026-10-15T10:00:00.000Z: The webhook accepted");
+    expect(shown).not.toContain("task-capability-123");
   });
 });

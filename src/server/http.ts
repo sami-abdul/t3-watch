@@ -42,12 +42,15 @@ export const hasPageSession = (request: IncomingMessage, store: Store, now: Date
   return cookie?.[1] !== undefined && isSession(store, cookie[1], now);
 };
 
-/** The access token agents and the CLI send, or a signed-in browser's session. */
-export const isAuthorized = (request: IncomingMessage, token: string, store: Store, now: Date) => {
+/** The access token agents and the CLI send as a bearer token. */
+export const hasToken = (request: IncomingMessage, token: string) => {
   const header = request.headers.authorization ?? "";
-  if (header.startsWith("Bearer ") && sameToken(header.slice(7), token)) return true;
-  return hasPageSession(request, store, now);
+  return header.startsWith("Bearer ") && sameToken(header.slice(7), token);
 };
+
+/** The access token agents and the CLI send, or a signed-in browser's session. */
+export const isAuthorized = (request: IncomingMessage, token: string, store: Store, now: Date) =>
+  hasToken(request, token) || hasPageSession(request, store, now);
 
 /**
  * A request the page made from its own origin, not another site or a script without an Origin.

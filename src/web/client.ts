@@ -1,3 +1,4 @@
+import type { AlertResult } from "../server/alerts.ts";
 import type { CheckAction } from "../server/app.ts";
 import type { Run } from "../server/store.ts";
 import type { WatchState } from "../server/state.ts";
@@ -24,6 +25,8 @@ export interface WatchClient {
   readonly saveRoots: ((roots: ReadonlyArray<string>) => Promise<void>) | null;
   /** Makes a new alert signing secret and returns it, once. Null in a chat, where it would stay in the transcript. */
   readonly makeAlertSecret: (() => Promise<string>) | null;
+  /** Sends a signed test alert to the webhook and returns how it answered. */
+  readonly testAlert: () => Promise<AlertResult>;
   /** Hands a question to the Watch thread. Returns what the person should know. */
   readonly ask: (text: string) => Promise<string>;
   readonly openPage: (() => void) | null;
@@ -65,6 +68,7 @@ export const httpClient: WatchClient = {
     await post("/api/settings", { roots });
   },
   makeAlertSecret: async () => (await post<{ secret: string }>("/api/alerts/secret")).secret,
+  testAlert: () => post<AlertResult>("/api/alerts/test"),
   ask: async (text) => {
     try {
       await navigator.clipboard.writeText(text);

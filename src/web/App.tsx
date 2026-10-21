@@ -13,7 +13,8 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
   const [state, setState] = useState<WatchState | null>(initial);
   const [error, setError] = useState<string | null>(null);
   const [wantsReview, setWantsReview] = useState(false);
-  const [details, setDetails] = useState(false);
+  // Details, and the section it opens on.
+  const [details, setDetails] = useState<false | "top" | "alerts">(false);
 
   const refresh = useCallback(() => {
     client
@@ -42,7 +43,10 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
 
   let body;
   if (state === null) body = <Muted>{error ?? "Loading…"}</Muted>;
-  else if (details) body = <Details client={client} state={state} refresh={refresh} onBack={() => setDetails(false)} />;
+  else if (details !== false)
+    body = (
+      <Details client={client} state={state} refresh={refresh} onBack={() => setDetails(false)} focus={details === "alerts" ? "alerts" : null} />
+    );
   else {
     const view = pageView(state, wantsReview);
     if (view === "scanning") body = <Scanning step={state.setup.status.step} />;
@@ -63,7 +67,7 @@ export function App({ client, initial = null }: { readonly client: WatchClient; 
       );
     else
       body = (
-        <Home client={client} state={state} refresh={refresh} onAddServices={startScan} onDetails={() => setDetails(true)} />
+        <Home client={client} state={state} refresh={refresh} onAddServices={startScan} onDetails={(focus) => setDetails(focus ?? "top")} />
       );
   }
 

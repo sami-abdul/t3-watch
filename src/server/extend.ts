@@ -1,10 +1,10 @@
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 
-import { deliverAlerts, makeAlertSecret } from "./alerts.ts";
+import { deliverAlerts, makeAlertSecret, sendTestAlert } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
 import { pageUrl, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft } from "./drafts.ts";
-import { fromPage, hasPageSession, type Route, readJson, sendJson } from "./http.ts";
+import { fromPage, hasPageSession, hasToken, type Route, readJson, sendJson } from "./http.ts";
 import { makeMcpServer } from "./mcp.ts";
 
 /** Routes and background work that build on the core service: settings, drafts, MCP, alerts. */
@@ -58,6 +58,17 @@ export const extendServer = (options: {
     return true;
   };
 
+  // A test wakes the thread the webhook is bound to, so a browser has to send it from the page
+  // itself; another site holding the cookie cannot. Agents and the CLI send the token.
+  const alertTest: Route = async (request, response, url) => {
+    if (url.pathname !== "/api/alerts/test" || request.method !== "POST") return false;
+    const config = options.config();
+    if (!hasToken(request, config.token) && !fromPage(request, config.publicUrl))
+      throw new WatchError("Send test alerts from the Watch page", 403);
+    sendJson(response, 200, await sendTestAlert(watch, page()));
+    return true;
+  };
+
   // Stateless MCP: a fresh server per request, behind the same token as the API.
   const mcp: Route = async (request, response, url) => {
     if (url.pathname !== "/mcp") return false;
@@ -86,7 +97,7 @@ export const extendServer = (options: {
   let unsubscribe: (() => void) | null = null;
 
   return {
-    routes: [settings, drafts, alertSecret, mcp] as ReadonlyArray<Route>,
+    routes: [settings, drafts, alertSecret, alertTest, mcp] as ReadonlyArray<Route>,
     publicRoutes: [] as ReadonlyArray<Route>,
     start: () => {
       unsubscribe = watch.onEvent(send) as () => void;

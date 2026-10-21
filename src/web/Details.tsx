@@ -6,6 +6,7 @@ import type { WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
 import { cn } from "~/lib/utils";
+import { AlertsPanel } from "./Alerts.tsx";
 import { ago } from "./logic.ts";
 import { Heading, Muted, outcomeTone, RowList, Section, type Tone } from "./ui.tsx";
 
@@ -46,26 +47,22 @@ export function Details({
   state,
   refresh,
   onBack,
+  focus = null,
 }: {
   readonly client: WatchClient;
   readonly state: WatchState;
   readonly refresh: () => void;
   readonly onBack: () => void;
+  /** A section to scroll to when Details opens, such as Alerts from Home's notice. */
+  readonly focus?: "alerts" | null;
 }) {
   const now = new Date(state.generatedAt);
   const [error, setError] = useState<string | null>(null);
   const [roots, setRoots] = useState<string | null>(null);
   const [configured, setConfigured] = useState<ReadonlyArray<string> | null>(null);
-  const [secret, setSecret] = useState<string | null>(null);
-  const [makingSecret, setMakingSecret] = useState(false);
-  // Replacing a secret while alerts are on stops them until the T3 task has the new one.
-  const [confirmReplace, setConfirmReplace] = useState(false);
-  const alertsOn = state.alerts.url !== null && state.alerts.signed;
-  // Reset rather than hide, so the prompt is not already armed when alerts come back.
   useEffect(() => {
-    if (!alertsOn) setConfirmReplace(false);
-  }, [alertsOn]);
-  const replacing = confirmReplace && alertsOn;
+    if (focus !== null) document.getElementById(focus)?.scrollIntoView({ block: "start" });
+  }, [focus]);
   const [rootsError, setRootsError] = useState<string | null>(null);
   // Tries again on every refresh until the folder list loads. A reply that arrives after a newer
   // request, or after a save, is ignored.
@@ -179,62 +176,7 @@ export function Details({
         )}
       </Section>
 
-      <Section title="Alerts">
-        <Muted>
-          {state.alerts.url !== null
-            ? `Changes go to ${state.alerts.url}, ${state.alerts.signed ? "signed" : "not signed"}.`
-            : client.makeAlertSecret === null
-              ? "Off. Make a signing secret on the Watch page, then ask the Watch thread to set up alerts."
-              : state.alerts.signed
-                ? secret !== null
-                  ? "Off. A signing secret is ready: ask your Watch thread to set up alerts and paste the secret into the card it shows."
-                  : "Off. A signing secret was made and shown once. If you kept it, ask your Watch thread to set up alerts and paste it into the card it shows. If not, make a new one."
-                :"Off. Make a signing secret, then ask your Watch thread to set up alerts. It creates a T3 webhook task and asks you to paste the secret into a private card."}
-        </Muted>
-        {client.makeAlertSecret === null ? null : secret !== null ? (
-          <div className="space-y-2">
-            <code className={cn("block select-all break-all rounded-lg border border-border p-3 font-mono text-foreground", typeClass("caption"))}>
-              {secret}
-            </code>
-            <Muted className={typeClass("caption")}>
-              Paste this into the card your Watch thread shows. It is shown once. Watch signs every alert with it from now on,
-              and the T3 task refuses alerts until it has the same secret.
-            </Muted>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              size="compact"
-              variant="secondary"
-              loading={makingSecret}
-              onClick={async () => {
-                if (alertsOn && !replacing) {
-                  setConfirmReplace(true);
-                  return;
-                }
-                setMakingSecret(true);
-                await act(async () => setSecret(await client.makeAlertSecret!()));
-                setMakingSecret(false);
-                setConfirmReplace(false);
-              }}
-            >
-              {replacing ? "Replace the secret" : state.alerts.signed ? "Make a new signing secret" : "Make a signing secret"}
-            </Button>
-            {replacing ? (
-              <Button size="compact" variant="ghost" onClick={() => setConfirmReplace(false)}>
-                Cancel
-              </Button>
-            ) : null}
-            {state.alerts.signed ? (
-              <Muted className={typeClass("caption")}>
-                {replacing
-                  ? "Alerts stop reaching your Watch thread until its T3 task has the new secret."
-                  : "Replaces the current secret. Alerts fail until the T3 task has the new one."}
-              </Muted>
-            ) : null}
-          </div>
-        )}
-      </Section>
+      <AlertsPanel client={client} state={state} refresh={refresh} />
 
       <Section title="Recent changes">
         {state.events.length === 0 ? (

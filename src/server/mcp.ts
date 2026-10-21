@@ -9,7 +9,7 @@ import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from "@model
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { alertSettings, setAlerts } from "./alerts.ts";
+import { alertHost, alertSettings, lastAlertDelivery, lastAlertTest, sendTestAlert, setAlerts } from "./alerts.ts";
 import { type Watch, WatchError } from "./app.ts";
 import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "./drafts.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
@@ -27,7 +27,7 @@ Roles: the page is for knowing and deciding (turn on, pause, add keys). You are 
 - New checks: watch_draft_check. It runs once and waits for the person; never assume it is on. New vendors: watch_draft_vendor with a JSON description (see catalog/*.json in the t3-watch repo for the shape); GET-only, https origin.
 - Never ask for, accept or repeat a key or token in chat. Keys are added on the page (Add key).
 - When the person wants to open the page, call watch_sign_in_link and give them the link; it signs one browser in, once, within ${SIGN_IN_MINUTES} minutes. Make one only when they ask. Never read ~/.t3-watch or Watch's access token.
-- Alerts: to wake this thread when a check changes, first ask the person to open the Watch page (watch_sign_in_link if they need a link), go to Details and press Make a signing secret under Alerts; the page shows the secret once. Then call request_secret so they paste it into a private card. Never ask for the secret in chat, never make one yourself, and never write it anywhere. Create a T3 webhook task bound to this thread with schedule_task: schedule {"type":"webhook","signature":{"header":"X-Watch-Signature","encoding":"hex","prefix":"sha256=","secretRef":<the secretRef from request_secret>}} and a prompt like "Watch reported: {{body.text}}. Look into it with watch_check {{body.checkId}}, leave a watch_note, and tell me what to do." Pass only the returned webhookUrl to watch_set_alerts, and don't repeat the URL in a reply. If the person makes a new secret later, alerts fail until you give the task the new one the same way with update_scheduled_task. For a morning digest, schedule a weekday task that calls watch_status.
+- Alerts: to wake this thread when a check changes, first ask the person to open the Watch page (watch_sign_in_link if they need a link), go to Details and press Make a signing secret under Alerts; the page shows the secret once. Then call request_secret so they paste it into a private card. Never ask for the secret in chat, never make one yourself, and never write it anywhere. Create a T3 webhook task bound to this thread with schedule_task: schedule {"type":"webhook","signature":{"header":"X-Watch-Signature","encoding":"hex","prefix":"sha256=","secretRef":<the secretRef from request_secret>}} and a prompt like "Watch reported: {{body.text}} If it names a check, look into it with watch_check {{body.checkId}}, leave a watch_note, and tell me what to do." Pass only the returned webhookUrl to watch_set_alerts, and don't repeat the URL in a reply. Then call watch_test_alert and tell the person whether the webhook accepted it; the test wakes this thread once with a message that needs no action. If the person makes a new secret later, alerts fail until you give the task the new one the same way with update_scheduled_task; then call watch_test_alert again. For a morning digest, schedule a weekday task that calls watch_status.
 - Code fixes belong in a normal coding thread in that repository, ending in a pull request. Do not edit code from the Watch thread.`;
 
 const SECRET_REFUSED =
@@ -272,7 +272,9 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
       return text(
         result.url === null
           ? "Alerts are off."
-          : `Alerts go to ${result.url}${result.signed ? ", signed" : ". They are not signed: ask the person to press Make a signing secret on the Watch page"}.`,
+          : result.signed
+            ? `Alerts go to ${result.host}, signed. Confirm the webhook accepts them with watch_test_alert.`
+            : `Alerts go to ${result.host}. They are not signed: ask the person to press Make a signing secret on the Watch page.`,
       );
     }),
   );
@@ -292,8 +294,32 @@ export const makeMcpServer = (watch: Watch, options: { readonly root: string; re
     { description: "Where change events go, if anywhere.", annotations: readOnly },
     async () => {
       const settings = alertSettings(watch);
-      return text(settings.url === null ? "Alerts are off." : `Alerts go to ${settings.url}${settings.secret ? ", signed" : ""}.`);
+      if (settings.url === null) return text("Alerts are off.");
+      const last = lastAlertTest(watch);
+      const delivery = lastAlertDelivery(watch);
+      return text(
+        [
+          `Alerts go to ${alertHost(settings.url)}${settings.secret === null ? ", not signed" : ", signed"}.`,
+          last === null ? "No test alert since they were set: send one with watch_test_alert." : `Last test at ${last.at}: ${last.message}`,
+          delivery === null ? null : `Last alert at ${delivery.at}: ${delivery.message}`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
     },
+  );
+
+  server.registerTool(
+    "watch_test_alert",
+    {
+      description:
+        "Sends one test alert, signed when a secret is set, to the webhook Watch's alerts go to, and says whether the webhook accepted it. It wakes the thread that webhook is bound to, once. Use it right after watch_set_alerts, and when the person asks whether alerts work.",
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    safely(async () => {
+      const result = await sendTestAlert(watch, options.pageUrl());
+      return text(result.message, { ...result });
+    }),
   );
 
   return server;

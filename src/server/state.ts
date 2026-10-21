@@ -1,4 +1,4 @@
-import { alertSettings } from "./alerts.ts";
+import { alertHost, alertSettings, lastAlertDelivery, lastAlertTest } from "./alerts.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE } from "./notices.ts";
@@ -37,9 +37,16 @@ export const readState = (watch: Watch) => {
     events: watch.store.events(20),
     notes: notes.filter((n) => n.checkId === null).slice(0, 10),
     vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft"),
+    // The host only: the address belongs to the T3 task, and this state can render inside a chat.
     alerts: (() => {
       const a = alertSettings(watch);
-      return { url: a.url, signed: a.secret !== null };
+      return {
+        on: a.url !== null,
+        host: alertHost(a.url),
+        signed: a.secret !== null,
+        lastTest: lastAlertTest(watch),
+        lastDelivery: lastAlertDelivery(watch),
+      };
     })(),
     setup: { scan: watch.store.getKv<Scan | null>("scan", null), status: watch.scanner.status() },
     link: watch.link(),

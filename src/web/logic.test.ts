@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import { accessRows, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
+import { accessRows, alertSteps, alertsNotice, latestAlertResult, needsHandover, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
@@ -41,7 +41,7 @@ const check = (over: Partial<CheckView>): CheckView => ({
 });
 const state = (over: Partial<WatchState>): WatchState => ({
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
-  alerts: { url: null, signed: false }, setup: { scan: null, status: { running: false, step: null, error: null } }, link: { offlineSince: null, probesDisagree: false }, vendors: [], ...over,
+  alerts: { on: false, host: null, signed: false, lastTest: null, lastDelivery: null }, setup: { scan: null, status: { running: false, step: null, error: null } }, link: { offlineSince: null, probesDisagree: false }, vendors: [], ...over,
 });
 
 describe("review", () => {
@@ -92,5 +92,57 @@ describe("page", () => {
     expect(model.passing).toHaveLength(10);
     expect(model.couldNotRun.map((c) => c.id)).toEqual(["u"]);
     expect(homeModel(state({ checks: [check({})] })).headline).toBe("All clear");
+  });
+});
+
+describe("alerts panel", () => {
+  const off = { on: false, host: null, signed: false, lastTest: null, lastDelivery: null };
+  const on = { on: true, host: "relay.t3.codes", signed: true, lastTest: null, lastDelivery: null };
+  const result = (ok: boolean, at = "2026-10-15T09:59:00.000Z") => ({ at, ok, status: ok ? 202 : 401, message: ok ? "Accepted." : "Refused." });
+
+  it("walks the three steps in order", () => {
+    expect(alertSteps(off)).toEqual({ secret: "current", connected: "waiting", tested: "waiting" });
+    expect(alertSteps({ ...off, signed: true })).toEqual({ secret: "done", connected: "current", tested: "waiting" });
+    expect(alertSteps(on)).toEqual({ secret: "done", connected: "done", tested: "current" });
+    expect(alertSteps({ ...on, lastTest: result(true) })).toEqual({ secret: "done", connected: "done", tested: "done" });
+    expect(alertSteps({ ...on, lastTest: result(false) }).tested).toBe("current");
+    // A real alert the webhook accepted proves the connection as well as a test does.
+    expect(alertSteps({ ...on, lastDelivery: result(true) }).tested).toBe("done");
+    // An unsigned address still needs its secret, and an unsigned alert proves no signature.
+    expect(alertSteps({ ...on, signed: false }).secret).toBe("current");
+    expect(alertSteps({ ...on, signed: false, lastTest: result(true) }).tested).toBe("current");
+  });
+
+  it("asks for the new secret's hand-over until an alert gets through again", () => {
+    expect(needsHandover(on, true)).toBe(true);
+    expect(needsHandover({ ...on, lastTest: result(false) }, true)).toBe(true);
+    expect(needsHandover({ ...on, lastTest: result(true) }, true)).toBe(false);
+    expect(needsHandover(on, false)).toBe(false);
+    expect(needsHandover(off, true)).toBe(false);
+  });
+
+  it("goes by the newer of the last test and the last real alert", () => {
+    const old = result(true, "2026-10-15T08:00:00.000Z");
+    const recent = result(false, "2026-10-15T09:00:00.000Z");
+    expect(latestAlertResult({ ...on, lastTest: old, lastDelivery: recent })).toBe(recent);
+    expect(latestAlertResult({ ...on, lastTest: recent, lastDelivery: old })).toBe(recent);
+    expect(latestAlertResult(on)).toBeNull();
+  });
+
+  it("speaks on Home when alerts are off with checks on, unsigned, untested or failing", () => {
+    expect(alertsNotice(state({}))).toBeNull();
+    expect(alertsNotice(state({ checks: [check({})] }))).toEqual({
+      text: "Alerts are off, so nothing wakes your Watch thread when a check fails.",
+      button: "Connect alerts",
+    });
+    expect(alertsNotice(state({ alerts: { ...on, signed: false } }))?.button).toBe("Fix alerts");
+    expect(alertsNotice(state({ alerts: on }))?.button).toBe("Test alerts");
+    expect(alertsNotice(state({ alerts: { ...on, lastTest: result(true) } }))).toBeNull();
+    expect(alertsNotice(state({ alerts: { ...on, lastTest: result(false) } }))?.text).toBe("The last test alert was not accepted. Refused.");
+    const failedLater = { ...on, lastTest: result(true, "2026-10-15T08:00:00.000Z"), lastDelivery: result(false, "2026-10-15T09:00:00.000Z") };
+    expect(alertsNotice(state({ alerts: failedLater }))?.text).toBe("The last alert did not get through. Refused.");
+    // A test that passed after the failed alert means the fix worked.
+    const fixed = { ...failedLater, lastTest: result(true, "2026-10-15T09:30:00.000Z") };
+    expect(alertsNotice(state({ alerts: fixed }))).toBeNull();
   });
 });

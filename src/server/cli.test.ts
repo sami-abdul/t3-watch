@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -79,6 +79,95 @@ describe("t3-watch signout", () => {
       expect(run.status).toBe(1);
       expect(run.stderr).toContain("No Watch in");
       expect(existsSync(join(home, "watch.sqlite"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("t3-watch alerts", () => {
+  const cli = join(import.meta.dirname, "cli.ts");
+  const { T3_WATCH_PORT: _port, T3_WATCH_HOST: _host, ...rest } = process.env;
+  // Async, so the stand-in Watch in this process can answer while the CLI waits.
+  const run = (home: string, ...args: Array<string>) =>
+    new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+      execFile(process.execPath, [cli, "alerts", ...args], { env: { ...rest, T3_WATCH_HOME: home }, encoding: "utf8" }, (error, stdout, stderr) =>
+        resolve({ code: error === null ? 0 : typeof error.code === "number" ? error.code : 1, stdout, stderr }),
+      );
+    });
+
+  it("sends a test through the running Watch and says what the webhook answered", async () => {
+    const seen: Array<string> = [];
+    let accepted = true;
+    let oldService = false;
+    let refusing = false;
+    const server = createServer((request, response) => {
+      seen.push(`${request.method} ${request.url} ${request.headers.authorization}`);
+      if (refusing) {
+        response.writeHead(401, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "Sign in with a one-time link from t3-watch url" }));
+        return;
+      }
+      if (oldService) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "Not found" }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        request.url === "/api/alerts/test"
+          ? JSON.stringify({ at: "2026-10-21T10:00:00.000Z", ok: accepted, status: accepted ? 202 : 401, message: accepted ? "Accepted." : "Refused." })
+          : JSON.stringify({ alerts: { on: true, host: "relay.example", signed: true, lastTest: null } }),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const home = mkdtempSync(join(tmpdir(), "t3w-alerts-"));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      writeFileSync(join(home, "config.json"), JSON.stringify({ port, host: "127.0.0.1", token: "t3w-alerts-token", roots: [] }));
+      expect(await run(home, "test")).toEqual({ code: 0, stdout: "Accepted.\n", stderr: "" });
+      accepted = false;
+      expect(await run(home, "test")).toEqual({ code: 1, stdout: "Refused.\n", stderr: "" });
+      expect((await run(home)).stdout).toBe("Alerts go to relay.example, signed.\nNo test alert since they were set. Send one with t3-watch alerts test.\n");
+      // A service still on the build before test alerts answers 404.
+      oldService = true;
+      const old = await run(home, "test");
+      expect(old.code).toBe(1);
+      expect(old.stderr).toContain("does not send test alerts yet. Restart it");
+      oldService = false;
+      refusing = true;
+      const refused = await run(home, "test");
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain("refused this folder's token, so it is not the Watch for");
+      refusing = false;
+      expect(seen).toEqual([
+        "POST /api/alerts/test Bearer t3w-alerts-token",
+        "POST /api/alerts/test Bearer t3w-alerts-token",
+        "GET /api/state Bearer t3w-alerts-token",
+        "POST /api/alerts/test Bearer t3w-alerts-token",
+        "POST /api/alerts/test Bearer t3w-alerts-token",
+      ]);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("says when no Watch answers, when the folder holds none, and when the word is unknown", async () => {
+    const home = mkdtempSync(join(tmpdir(), "t3w-alerts-"));
+    try {
+      const none = await run(home, "test");
+      expect(none.code).toBe(1);
+      expect(none.stderr).toContain("No Watch in");
+      // Port 9 is discard, which nothing on a test machine serves.
+      writeFileSync(join(home, "config.json"), JSON.stringify({ port: 9, host: "127.0.0.1", token: "t", roots: [] }));
+      const down = await run(home, "test");
+      expect(down.code).toBe(1);
+      expect(down.stderr).toContain("Watch is not running at http://127.0.0.1:9");
+      const odd = await run(home, "send");
+      expect(odd.code).toBe(1);
+      expect(odd.stderr).toContain('takes no "send"');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
