@@ -19,8 +19,8 @@
 - [x] 3.1 Tests, typecheck, build and `openspec validate add-demo-install --strict`.
 - [x] 3.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 11, 15 and 8; 33 fixed, 1 declined in `.wattson/decisions.md`.
-- [ ] 3.3 The built demo serves the sample page, makes no outside request and leaves no folder
+- [x] 3.3 The built demo serves the sample page, makes no outside request and leaves no folder
       once stopped; the live Watch restarts briefly on the new `start` with its alert settings
       intact and 22 of 22 checks passing.
-- [ ] 3.4 Release 0.3.0 to npm, so the README's `npx @lfg-labs/t3-watch demo` runs the demo, and
+- [x] 3.4 Release 0.3.0 to npm, so the README's `npx @lfg-labs/t3-watch demo` runs the demo, and
       check it from the registry.
