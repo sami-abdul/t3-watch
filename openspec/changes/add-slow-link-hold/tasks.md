@@ -24,6 +24,6 @@
 - [x] 4.2 Review rounds at high effort, with each finding fixed or declined with a reason: three
       rounds found 15, 11 and 12; 35 fixed, and 3 declined in whole or in part in
       `.wattson/decisions.md`.
-- [ ] 4.3 On a scratch Watch with a slowed probe and a check whose connection times out: the run
+- [x] 4.3 On a scratch Watch with a slowed probe and a check whose connection times out: the run
       is held and Home says the connection is slow; the live Watch restarts briefly with its
       alert settings intact and 22 of 22 checks passing.
