@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 import { firstLine, type ProcResult, type RunProc } from "../proc.ts";
+import type { Store } from "../store.ts";
 import { describeAge } from "../vendors.ts";
 import { PATIENT_ANSWER_MS } from "./network.ts";
-import { type CheckRunner, unknown } from "./types.ts";
+import { type CheckResult, type CheckRunner, unknown } from "./types.ts";
 
 const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
 const argument = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_./ -]{0,199}$/);
@@ -222,6 +223,38 @@ const standingOf = async (gh: Reader, rows: ReadonlyArray<RunRow>): Promise<Stan
 const runsOf = (rows: ReadonlyArray<RunRow>) => rows.map((r) => ({ workflow: r.workflowName, title: r.displayTitle, url: r.url, at: r.createdAt }));
 const names = (rows: ReadonlyArray<RunRow>) => rows.map((r) => r.workflowName).join(", ");
 
+/** Where a check reads, as its summaries name it: the branch in the repository, or the repository. */
+const whereOf = (c: z.infer<typeof GitHubConfig>) => (c.branch === undefined ? c.repo : `${c.branch} in ${c.repo}`);
+
+/** What gh lists for a check: its repository, and its branch and workflow when it names them. */
+const listingOf = (c: z.infer<typeof GitHubConfig>) => ({ repo: c.repo, branch: c.branch, workflow: c.workflow });
+
+/** Whether a run counted the same listing: the same repository, branch and workflow. */
+const sameListing = (counted: unknown, listing: ReturnType<typeof listingOf>) =>
+  typeof counted === "object" &&
+  counted !== null &&
+  (["repo", "branch", "workflow"] as const).every((key) => (counted as Record<string, unknown>)[key] === listing[key]);
+
+/** What a run recorded before Watch counted its listings kept of the runs it saw. */
+const sawRuns = (evidence: Readonly<Record<string, unknown>>) =>
+  ["workflows", "runs", "billing", "unread"].some((key) => Array.isArray(evidence[key]) && evidence[key].length > 0) ||
+  typeof evidence.lastSuccessAt === "string" ||
+  (typeof evidence.finished === "number" && evidence.finished > 0);
+
+/**
+ * Whether gh has listed runs for this listing: the latest run in the check's history that counted
+ * one decides, by whether it was the same listing and had runs, or was an empty one from a
+ * repository that had them. A pause or a snooze leaves that alone, and an edit to another branch
+ * or workflow starts over. A run from before Watch counted listings says by what it kept.
+ */
+const hadRuns = (store: Store, checkId: string, listing: ReturnType<typeof listingOf>) => {
+  for (const { evidence } of store.history(checkId)) {
+    if (typeof evidence.listed === "number") return sameListing(evidence.listedFor, listing) && (evidence.listed > 0 || evidence.hadRuns === true);
+    if (sawRuns(evidence)) return true;
+  }
+  return false;
+};
+
 /**
  * How long ago the newest finished success started, in seconds, or with none, how far back the
  * finished runs reach, which the newest success is older than; null when gh gave no time.
@@ -233,46 +266,12 @@ const successAge = (finished: ReadonlyArray<RunRow>, now: Date) => {
   return { success, seconds: Number.isFinite(from) ? (now.getTime() - from) / 1000 : null };
 };
 
-/**
- * Fails when the latest finished run of any workflow on the branch failed, but says plainly when
- * GitHub refused to run it for billing, as a check that could not run, kept apart from real
- * failures; a real failure behind such runs still fails it. With maxAgeSeconds it also fails when
- * the workflow's newest success is older than that, including when no run read succeeded and
- * those runs reach back further than that.
- */
-export const runGitHub: CheckRunner = async (check, { deps, patient }) => {
-  const config = GitHubConfig.safeParse(check.config);
-  if (!config.success) return unknown("The check's settings are invalid");
-  const c = config.data;
-  const gh: Reader = { run: deps.run, repo: c.repo, timeoutMs: ghMs(patient), now: deps.now() };
-  const result = await deps.run(
-    "gh",
-    [
-      "run",
-      "list",
-      "--repo",
-      c.repo,
-      ...(c.branch === undefined ? [] : ["--branch", c.branch]),
-      ...(c.workflow === undefined ? [] : ["--workflow", c.workflow]),
-      "--limit",
-      "30",
-      "--json",
-      "status,conclusion,workflowName,displayTitle,url,createdAt,databaseId,updatedAt",
-    ],
-    { timeoutMs: gh.timeoutMs },
-  );
-  if (result.missing) return unknown("Install the GitHub CLI (gh) on this machine");
-  if (result.code !== 0)
-    return /auth|login|401/i.test(result.stderr)
-      ? unknown("The GitHub CLI is not logged in. Run gh auth login")
-      : unknown(`gh could not read runs: ${result.timedOut ? ghError(result, gh.timeoutMs) : result.stderr.trim().slice(0, 160)}`);
-  const listed = parseJson(result.stdout);
-  if (!Array.isArray(listed)) return unknown("gh returned unreadable output");
-  const runs = listed as Array<RunRow>;
+/** The verdict on the runs gh listed for a check, as runGitHub describes it. */
+const judge = async (c: z.infer<typeof GitHubConfig>, gh: Reader, runs: ReadonlyArray<RunRow>): Promise<CheckResult> => {
   const counted = runs.filter((run) => run.status === "completed" && !IGNORED.has(run.conclusion ?? ""));
   const latest = new Map<string, RunRow>();
   for (const run of counted) if (!latest.has(run.workflowName)) latest.set(run.workflowName, run);
-  const where = c.branch === undefined ? c.repo : `${c.branch} in ${c.repo}`;
+  const where = whereOf(c);
   const finished = runs.filter((run) => run.status === "completed");
   const age = successAge(finished, gh.now);
   const staleness = (maxAgeSeconds: number) =>
@@ -342,4 +341,56 @@ export const runGitHub: CheckRunner = async (check, { deps, patient }) => {
     summary: `${passing}, last success ${describeAge(age.seconds)} ago`,
     evidence: { workflows: [...latest.keys()], lastSuccessAt },
   };
+};
+
+/**
+ * Fails when the latest finished run of any workflow on the branch failed, but says plainly when
+ * GitHub refused to run it for billing, as a check that could not run, kept apart from real
+ * failures; a real failure behind such runs still fails it. With maxAgeSeconds it also fails when
+ * the workflow's newest success is older than that, including when no run read succeeded and
+ * those runs reach back further than that.
+ */
+export const runGitHub: CheckRunner = async (check, { deps, patient, store }) => {
+  const config = GitHubConfig.safeParse(check.config);
+  if (!config.success) return unknown("The check's settings are invalid");
+  const c = config.data;
+  const gh: Reader = { run: deps.run, repo: c.repo, timeoutMs: ghMs(patient), now: deps.now() };
+  const result = await deps.run(
+    "gh",
+    [
+      "run",
+      "list",
+      "--repo",
+      c.repo,
+      ...(c.branch === undefined ? [] : ["--branch", c.branch]),
+      ...(c.workflow === undefined ? [] : ["--workflow", c.workflow]),
+      "--limit",
+      "30",
+      "--json",
+      "status,conclusion,workflowName,displayTitle,url,createdAt,databaseId,updatedAt",
+    ],
+    { timeoutMs: gh.timeoutMs },
+  );
+  if (result.missing) return unknown("Install the GitHub CLI (gh) on this machine");
+  if (result.code !== 0)
+    return /auth|login|401/i.test(result.stderr)
+      ? unknown("The GitHub CLI is not logged in. Run gh auth login")
+      : unknown(`gh could not read runs: ${result.timedOut ? ghError(result, gh.timeoutMs) : result.stderr.trim().slice(0, 160)}`);
+  const listed = parseJson(result.stdout);
+  if (!Array.isArray(listed)) return unknown("gh returned unreadable output");
+  const runs = listed as Array<RunRow>;
+  // A repository does not lose its runs between two reads: an empty list from one that had them is
+  // GitHub's moment, which the runner holds for up to an hour.
+  const listing = listingOf(c);
+  if (runs.length === 0 && hadRuns(store, check.id, listing))
+    return unknown(`GitHub listed no runs for ${c.workflow === undefined ? "" : `${c.workflow} on `}${whereOf(c)}, though it had them before`, {
+      listed: 0,
+      listedFor: listing,
+      hadRuns: true,
+      transient: true,
+    });
+  const verdict = await judge(c, gh, runs);
+  // Every answer from a list says how many runs it had and for what, so a later empty one can be
+  // told apart.
+  return { ...verdict, evidence: { ...verdict.evidence, listed: runs.length, listedFor: listing } };
 };

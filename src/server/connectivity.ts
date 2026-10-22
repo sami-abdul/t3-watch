@@ -47,8 +47,8 @@ export interface Link {
   readonly slowSince: string | null;
 }
 
-/** Why Watch holds a failure: it cannot reach the internet, or its link is slow. */
-export type HoldReason = "offline" | "slow";
+/** Why Watch holds a failure: it cannot reach the internet, its link is slow, or the source's trouble may pass on its own. */
+export type HoldReason = "offline" | "slow" | "transient";
 
 interface ProbeAnswer {
   readonly online: boolean;

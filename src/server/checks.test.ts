@@ -348,6 +348,54 @@ describe("check kinds", () => {
     expect(await look()).toEqual(["fail", "No successful run for more than 6 hours on acme/site; GitHub didn't run Nightly: Actions is blocked on billing"]);
   });
 
+  it("github tells a moment's empty list from a repository with no runs yet", async () => {
+    // The fixture: what `gh run list` answered for main, runs first, then none at all.
+    const fixture = [{ status: "completed", conclusion: "success", workflowName: "CI", displayTitle: "push", url: "https://github.com/acme/api/actions/runs/1", createdAt: "2026-10-15T09:00:00Z", databaseId: 1 }];
+    let listing: Array<unknown> = fixture;
+    let failing = false;
+    const fake = fakeDeps({ commands: { gh: (args) => (args[0] !== "run" ? { code: 1, stderr: "unexpected" } : failing ? { code: 1, stderr: "gh: HTTP 502" } : { stdout: JSON.stringify(listing) }) } });
+    const watch = testWatch(fake.deps);
+    const define = (id: string, config: Record<string, unknown> = { repo: "acme/api", branch: "main" }) =>
+      watch.defineCheck({ ...base, id, serviceId: "s", kind: "github", intent: "x", config }, "on");
+    // A check that has never seen runs says so, as before.
+    listing = [];
+    expect(await watch.runner.trial(define("fresh"))).toMatchObject({ outcome: "unknown", summary: "No finished runs yet", evidence: { listed: 0 } });
+    // One that listed runs, then could not read them for more than 30 runs, then listed none:
+    // GitHub's moment, marked for the runner to hold.
+    listing = fixture;
+    define("ci");
+    await watch.runner.tick();
+    expect(watch.store.runs("ci", 1)[0]!.evidence).toEqual({ workflows: ["CI"], listed: 1, listedFor: { repo: "acme/api", branch: "main" } });
+    failing = true;
+    for (let i = 0; i < 31; i++) {
+      fake.advance(301);
+      await watch.runner.tick();
+    }
+    expect(watch.store.runs("ci", 100).filter((run) => run.evidence.listed === undefined)).toHaveLength(31);
+    failing = false;
+    listing = [];
+    const moment = {
+      outcome: "unknown",
+      summary: "GitHub listed no runs for main in acme/api, though it had them before",
+      evidence: { listed: 0, listedFor: { repo: "acme/api", branch: "main" }, hadRuns: true, transient: true },
+    };
+    expect(await watch.runner.trial(watch.store.check("ci")!)).toEqual(moment);
+    // A snooze and a resume change no definition: the runs it listed still count.
+    await watch.setCheck("ci", "snooze", new Date(fake.deps.now().getTime() + 3_600_000).toISOString());
+    await watch.setCheck("ci", "resume");
+    expect(await watch.runner.trial(watch.store.check("ci")!)).toEqual(moment);
+    // The runs listed before an edit were another branch's: one that never ran has none yet.
+    expect(await watch.runner.trial(define("ci", { repo: "acme/api", branch: "release" }))).toMatchObject({ summary: "No finished runs yet", evidence: { listed: 0 } });
+    // A run kept from before Watch counted its listings says the repository had runs by what it
+    // kept. With no branch, the repository is named, and a workflow when the check has one.
+    const anyBranch = define("all", { repo: "acme/api" });
+    watch.store.recordRun(anyBranch, { outcome: "pass", summary: "1 workflow passing on acme/api", evidence: { workflows: ["CI"] } }, "2026-10-15T10:00:00Z", 1, "2026-10-15T10:05:00Z");
+    expect((await watch.runner.trial(watch.store.check("all")!)).summary).toBe("GitHub listed no runs for acme/api, though it had them before");
+    const nightly = define("nightly", { repo: "acme/site", workflow: "refresh.yml" });
+    watch.store.recordRun(nightly, { outcome: "pass", summary: "1 workflow passing on acme/site", evidence: { workflows: ["Refresh"] } }, "2026-10-15T10:00:00Z", 1, "2026-10-15T10:05:00Z");
+    expect((await watch.runner.trial(watch.store.check("nightly")!)).summary).toBe("GitHub listed no runs for refresh.yml on acme/site, though it had them before");
+  });
+
   it("github refuses maxAgeSeconds without a workflow", () => {
     expect(GitHubConfig.safeParse({ repo: "acme/site", maxAgeSeconds: 21600 }).success).toBe(false);
     expect(GitHubConfig.safeParse({ repo: "acme/site", workflow: "refresh.yml", maxAgeSeconds: 21600 }).success).toBe(true);

@@ -217,6 +217,9 @@ const toKey = (r: Row): KeyRecord => ({
 
 export type Store = ReturnType<typeof openStore>;
 
+/** How many of a check's runs its history keeps, newest first. */
+const RUNS_KEPT = 200;
+
 /** All persistent state, in one SQLite file. Pass ":memory:" in tests. */
 export const openStore = (file: string) => {
   const db = new DatabaseSync(file);
@@ -238,7 +241,7 @@ export const openStore = (file: string) => {
     db.prepare(sql).get(...params) as Row | undefined;
   const exec = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).run(...params);
-  /** Keeps a run in a check's history, which holds its newest 200. */
+  /** Keeps a run in a check's history, which holds its newest RUNS_KEPT. */
   const addRun = (checkId: string, at: string, outcome: Outcome, summary: string, evidence: Record<string, unknown>, durationMs: number) => {
     exec(
       "INSERT INTO runs (check_id, at, outcome, summary, evidence, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
@@ -251,9 +254,10 @@ export const openStore = (file: string) => {
     );
     exec(
       `DELETE FROM runs WHERE check_id = ? AND id NOT IN
-         (SELECT id FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 200)`,
+         (SELECT id FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT ?)`,
       checkId,
       checkId,
+      RUNS_KEPT,
     );
   };
   /** Keeps a run in the history without touching the check's last result; only its next run time moves. */
@@ -420,9 +424,9 @@ export const openStore = (file: string) => {
       return toEvent(one("SELECT * FROM events WHERE id = ?", Number(info.lastInsertRowid))!);
     },
     /**
-     * Keeps a run Watch held while it could not reach the internet, or while its link was slow and
-     * the failure was one a slow link explains. The check keeps its last result and no event is
-     * made; only its next run time moves.
+     * Keeps a run Watch held while it could not reach the internet, while its link was slow and the
+     * failure was one a slow link explains, or while the source's trouble may pass on its own. The
+     * check keeps its last result and no event is made; only its next run time moves.
      */
     recordHeld: (
       checkId: string,
@@ -432,7 +436,8 @@ export const openStore = (file: string) => {
       nextRunAt: string,
       why: HoldReason = "offline",
     ) => {
-      const reason = why === "slow" ? "Held while Watch's connection was slow" : "Held while Watch could not reach the internet";
+      const reason =
+        why === "slow" ? "Held while Watch's connection was slow" : why === "transient" ? "Held for up to an hour in case it passes" : "Held while Watch could not reach the internet";
       const summary = `${reason}: ${result.summary}`.slice(0, 300);
       setAside(checkId, at, "unknown", summary, { ...result.evidence, held: true, ...(why === "slow" ? { slow: true } : {}) }, durationMs, nextRunAt);
     },
@@ -465,9 +470,18 @@ export const openStore = (file: string) => {
           checkId,
         )?.n ?? 0,
       ),
-    /** Whether the check's latest run was held, so its link may still be slow. */
-    lastRunHeld: (checkId: string) =>
-      one(`SELECT json_extract(evidence, '$.held') AS held FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 1`, checkId)?.held === 1,
+    /**
+     * Whether the check's latest run was held for Watch's link, so the link may still be slow. A run
+     * held for trouble at the source came with an answer, which says the link was fine.
+     */
+    lastRunHeld: (checkId: string) => {
+      const row = one(
+        `SELECT json_extract(evidence, '$.held') AS held, json_extract(evidence, '$.transient') AS transient
+           FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 1`,
+        checkId,
+      );
+      return row?.held === 1 && row.transient !== 1;
+    },
     /** Shows a trial's result on a draft or suggestion without recording a run or an event. */
     setTrialResult: (id: string, outcome: Outcome, summary: string, at: string) =>
       exec(
@@ -482,6 +496,8 @@ export const openStore = (file: string) => {
       all("SELECT * FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT ?", checkId, limit).map(
         toRun,
       ),
+    /** A check's whole kept history, newest first. */
+    history: (checkId: string) => all("SELECT * FROM runs WHERE check_id = ? ORDER BY id DESC", checkId).map(toRun),
     events: (limit = 50) =>
       all("SELECT * FROM events ORDER BY id DESC LIMIT ?", limit).map(toEvent),
     /**

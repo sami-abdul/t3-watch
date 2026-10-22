@@ -896,3 +896,111 @@ describe("runner when GitHub Actions is blocked on billing", () => {
     expect(changes()).toEqual(["pass -> unknown", "unknown -> pass"]);
   });
 });
+
+describe("runner when GitHub lists no runs for a moment", () => {
+  // The fixture: what `gh run list` answered for main on a repository with runs, then nothing.
+  const RUNS = [{ status: "completed", conclusion: "success", workflowName: "CI", displayTitle: "push", url: "https://github.com/acme/api/actions/runs/1", createdAt: "2026-10-15T09:00:00Z", databaseId: 1 }];
+  const setup = () => {
+    // The runs gh lists, or null while gh cannot read them.
+    let listing: Array<unknown> | null = RUNS;
+    // The probe addresses' answers, counted, for a Watch with holding on.
+    const net = { probes: 0 };
+    const fake = fakeDeps({
+      commands: {
+        gh: (args) => (args[0] !== "run" ? { code: 1, stderr: "unexpected" } : listing === null ? { code: 1, stderr: "gh: HTTP 502" } : { stdout: JSON.stringify(listing) }),
+      },
+      fetch: () => {
+        net.probes++;
+        return new Response("ok");
+      },
+    });
+    // How long each `gh run list` was given to answer.
+    const waits: Array<number | undefined> = [];
+    const watch = makeWatch({
+      home: null,
+      dbFile: ":memory:",
+      deps: {
+        ...fake.deps,
+        run: (command, args, options) => {
+          if (args[0] === "run") waits.push(options?.timeoutMs);
+          return fake.deps.run(command, args, options);
+        },
+      },
+    });
+    watch.upsertService({ id: "github:acme/api", vendor: "github", label: "acme/api", target: "acme/api", reachable: true, note: null, foundIn: [] });
+    watch.defineCheck(
+      { id: "ci", serviceId: "github:acme/api", kind: "github", intent: "CI on main is passing", config: { repo: "acme/api", branch: "main" }, keyId: null, cadenceSeconds: 300, origin: "scan" },
+      "on",
+    );
+    const changes = () => watch.store.events().map((e) => `${e.from} -> ${e.to}: ${e.summary}`).toReversed();
+    return { fake, watch, net, waits, changes, list: (runs: Array<unknown> | null) => (listing = runs) };
+  };
+
+  it("holds the empty list with no change, and carries on when the runs come back", async () => {
+    const { fake, watch, net, waits, changes, list } = setup();
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.lastOutcome).toBe("pass");
+    list([]);
+    fake.advance(301);
+    const probes = net.probes;
+    await watch.runner.tick();
+    expect(watch.store.check("ci")).toMatchObject({ lastOutcome: "pass", pending: null });
+    expect(watch.store.runs("ci", 1)[0]).toMatchObject({
+      summary: "Held for up to an hour in case it passes: GitHub listed no runs for main in acme/api, though it had them before",
+      evidence: { held: true, transient: true },
+    });
+    // gh answered, so Watch's link is fine: no probe, and the next run waits no longer than usual.
+    expect(net.probes).toBe(probes);
+    list(RUNS);
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.lastOutcome).toBe("pass");
+    expect(changes()).toEqual([]);
+    expect(waits).toEqual([20_000, 20_000, 20_000]);
+  });
+
+  it("keeps what a check that was not passing said in place", async () => {
+    const { fake, watch, changes, list } = setup();
+    await watch.runner.tick();
+    list(null);
+    fake.advance(301);
+    await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(changes()).toEqual(["pass -> unknown: gh could not read runs: gh: HTTP 502"]);
+    list([]);
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.lastSummary).toBe("gh could not read runs: gh: HTTP 502");
+    expect(watch.store.runs("ci", 1)[0]).toMatchObject({ evidence: { held: true, transient: true } });
+    list(RUNS);
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(changes()).toEqual(["pass -> unknown: gh could not read runs: gh: HTTP 502", "unknown -> pass: 1 workflow passing on main in acme/api"]);
+  });
+
+  it("names it, with one change, once it has lasted an hour", async () => {
+    const { fake, watch, changes, list } = setup();
+    await watch.runner.tick();
+    list([]);
+    // An hour of the check's runs held, each a cadence apart.
+    for (let i = 0; i < 12; i++) {
+      fake.advance(301);
+      await watch.runner.tick();
+    }
+    expect(watch.store.check("ci")!.lastOutcome).toBe("pass");
+    expect(changes()).toEqual([]);
+    // Past the hour it waits once for a second run, as any first failure does, then says so.
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.pending).toMatchObject({ outcome: "unknown" });
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(changes()).toEqual(["pass -> unknown: GitHub listed no runs for main in acme/api, though it had them before"]);
+    // Still empty: nothing new to say, and the summary stays.
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(changes()).toHaveLength(1);
+    expect(watch.store.check("ci")!.lastSummary).toBe("GitHub listed no runs for main in acme/api, though it had them before");
+  });
+});

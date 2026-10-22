@@ -23,3 +23,9 @@ export const unknown = (summary: string, evidence: Record<string, unknown> = {})
   summary,
   evidence,
 });
+
+/**
+ * Whether a result is trouble at the source's end that passes on its own, such as GitHub listing no
+ * runs for a moment, which the runner holds for up to an hour before it counts.
+ */
+export const passesOnItsOwn = (result: CheckResult) => result.evidence.transient === true;

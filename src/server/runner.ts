@@ -1,5 +1,6 @@
 import { type CheckContext, type CheckResult, runCheck } from "./checks/index.ts";
 import { linkExplains } from "./checks/network.ts";
+import { passesOnItsOwn } from "./checks/types.ts";
 import { type Connectivity, heldWhenOffline, MAX_HOLD_MS, onTheInternet, provesInternet, targetHost } from "./connectivity.ts";
 import { steadyClock } from "./proc.ts";
 import { type ChangeEvent, type Check, changesState } from "./store.ts";
@@ -52,7 +53,10 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
     if (typeof host === "string") link.failed(host);
   };
 
-  /** `manual` is a run someone asked for, which records its result as it is. */
+  /**
+   * `manual` is a run someone asked for, which records its result without a second run to confirm
+   * it. It is held as any run is.
+   */
   const record = async ({ check, result, started, finished, tookMs, finishedClock }: Ran, manual: boolean) => {
     try {
       const fresh = context.store.check(check.id);
@@ -77,10 +81,15 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
             if (context.store.check(fresh.id)?.updatedAt !== check.updatedAt) return null;
           }
         }
-      } else if (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline() || link.slow())) {
+      } else if (
+        passesOnItsOwn(result) ||
+        (heldWhenOffline(fresh, context.vendors()) && (changesState(fresh.lastOutcome, result.outcome) || link.offline() || link.slow()))
+      ) {
         // A slow link explains a timeout or a dropped connection to a public host; the local network
-        // and the tailnet are not on the probes' path.
-        const why = await link.hold(linkExplains(result) && onTheInternet(fresh, context.vendors()));
+        // and the tailnet are not on the probes' path. Trouble at the source that passes on its own
+        // came with an answer, so the link is fine: it is held without a probe, and whatever the
+        // check said before stays in place.
+        const why = passesOnItsOwn(result) ? "transient" : await link.hold(linkExplains(result) && onTheInternet(fresh, context.vendors()));
         // And one made while the probe ran.
         if (context.store.check(fresh.id)?.updatedAt !== check.updatedAt) return null;
         const capped = context.store.heldStreak(fresh.id) >= Math.ceil(MAX_HOLD_MS / 1000 / fresh.cadenceSeconds);
@@ -142,7 +151,10 @@ export const makeRunner = (context: CheckContext, onEvent: (event: ChangeEvent) 
 
   return {
     tick,
-    /** Runs one check now and records the result as it is, whatever the check's state. */
+    /**
+     * Runs one check now, whatever the check's state, and records the result without a second run to
+     * confirm it, unless Watch holds it as it holds any run.
+     */
     runNow: (check: Check) => runAndRecord(check, true),
     /** Runs a check without recording anything, for setup and drafts. */
     trial: (check: Check) => runCheck(check, context),
