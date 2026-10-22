@@ -97,6 +97,8 @@ Things to ask:
 - "Make sure the nightly import ran." The agent drafts a check, runs it once, and leaves it for you
   to turn on.
 - "Watch Missive too." The agent writes a vendor description and tests it with your key.
+- "Put shop.example under Storefront." Home groups checks by product, guessed from names; when a
+  site's repository has another name, the agent names the product, and the repository follows.
 - "Set up alerts." Alerts in the page's Details walks you through three steps. Press **Make a
   signing secret**, which the page shows once. Say "Set up alerts" here: the agent creates a T3
   webhook task bound to the thread that checks Watch's signature, asks you to paste the secret

@@ -37,7 +37,7 @@ const scan: Scan = {
 const check = (over: Partial<CheckView>): CheckView => ({
   id: "c", serviceId: "s", kind: "http", intent: "i", config: {}, keyId: null, cadenceSeconds: 60, state: "on", pending: null,
   snoozedUntil: null, nextRunAt: null, origin: "scan", lastOutcome: "pass", lastSummary: null, lastRunAt: null,
-  createdAt: "", updatedAt: "", serviceLabel: "S", note: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
+  createdAt: "", updatedAt: "", serviceLabel: "S", serviceProduct: null, note: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
 });
 const state = (over: Partial<WatchState>): WatchState => ({
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
@@ -284,6 +284,57 @@ describe("Edit and Delete", () => {
       [false, false],
       [false, false],
     ]);
+  });
+
+  it("group by a product someone named, ahead of the guess, and bring a repository of that name along", () => {
+    const site = check({ id: "site", serviceId: "custom:shop", serviceLabel: "shop.example.com" });
+    const repo = check({ id: "ci", serviceId: "github:acme/storefront", serviceLabel: "acme/storefront" });
+    const other = check({ id: "api", serviceId: "custom:api", serviceLabel: "api.example.com" });
+    // Guessed from names, the site and its repository stay apart.
+    const guessed = productsOf([site, repo, other]);
+    expect([guessed(site).label, guessed(repo).label]).toEqual(["shop.example.com", "acme/storefront"]);
+    // Named after the repository, the site brings it along, under the name as written.
+    const storefront = { ...site, serviceProduct: "Storefront" };
+    const named = productsOf([storefront, repo, other]);
+    expect(named(storefront)).toEqual({ key: "product:storefront", label: "Storefront" });
+    expect(named(repo)).toEqual(named(storefront));
+    expect(named(other)).toEqual({ key: "custom:api", label: "api.example.com" });
+    // A name given to a service wins over the repository's own match.
+    const apart = { ...repo, serviceProduct: "Build tools" };
+    expect(productsOf([storefront, apart])(apart)).toEqual({ key: "product:buildtools", label: "Build tools" });
+    // Two spellings of one name make one product; a name with no letters or digits is no name.
+    const shout = { ...other, serviceProduct: "STOREFRONT" };
+    expect(productsOf([storefront, shout])(shout).key).toBe("product:storefront");
+    // A repository that matched a site by its name follows that site into the product it is named.
+    const shop = check({ id: "shop-ci", serviceId: "github:acme/shop", serviceLabel: "acme/shop" });
+    const renamed = { ...site, serviceProduct: "Boutique" };
+    expect(productsOf([renamed, shop])(shop)).toEqual({ key: "product:boutique", label: "Boutique" });
+    // A repository stays with its own site's named product, whatever else is named after it.
+    const boutiqueSite = { ...check({ id: "sf", serviceId: "custom:storefront", serviceLabel: "storefront.example.com" }), serviceProduct: "Boutique" };
+    const ownRepo = check({ id: "sf-ci", serviceId: "github:acme/storefront", serviceLabel: "acme/storefront" });
+    expect(productsOf([boutiqueSite, ownRepo, { ...other, serviceProduct: "Storefront" }])(ownRepo).key).toBe("product:boutique");
+    // A repository goes wherever its site goes, the site's full name included.
+    const aliasSite = check({ id: "shop-up", serviceId: "custom:shop", serviceLabel: "shop.example.com" });
+    const aliasRepo = check({ id: "shop-ci", serviceId: "github:acme/shop", serviceLabel: "acme/shop" });
+    const byFullName = { ...other, serviceProduct: "shop.example.com" };
+    const alias = productsOf([aliasSite, aliasRepo, byFullName]);
+    expect([alias(aliasSite).key, alias(aliasRepo).key]).toEqual(["product:shopexamplecom", "product:shopexamplecom"]);
+    // Naming another service after a site and its repository keeps the pair together in it.
+    const pairSite = check({ id: "sf", serviceId: "custom:storefront", serviceLabel: "storefront.example.com" });
+    const pairRepo = check({ id: "sf-ci", serviceId: "github:acme/storefront", serviceLabel: "acme/storefront" });
+    const api = { ...other, serviceProduct: "Storefront" };
+    const together = productsOf([pairSite, pairRepo, api]);
+    expect([together(pairSite).key, together(pairRepo).key, together(api).key]).toEqual(["product:storefront", "product:storefront", "product:storefront"]);
+    // Names in any script, compared without case or accents.
+    const tokyo = { ...site, serviceProduct: "Boutique 東京" };
+    const osaka = { ...other, serviceProduct: "Boutique 大阪" };
+    const byCity = productsOf([tokyo, osaka]);
+    expect([byCity(tokyo).label, byCity(osaka).label]).toEqual(["Boutique 東京", "Boutique 大阪"]);
+    expect(productsOf([{ ...site, serviceProduct: "Café" }, { ...other, serviceProduct: "Cafe" }])({ ...other, serviceProduct: "Cafe" }).key).toBe("product:cafe");
+    expect(productsOf([{ ...site, serviceProduct: "…" }])({ ...site, serviceProduct: "…" })).toEqual({ key: "custom:shop", label: "shop.example.com" });
+    // A state from a Watch older than the page has no product field at all.
+    const older = { ...site, serviceProduct: undefined } as unknown as typeof site;
+    expect(productsOf([older])(older)).toEqual({ key: "custom:shop", label: "shop.example.com" });
   });
 
   it("start from one read of the stored check, with a vendor check's settings left out", () => {

@@ -25,6 +25,8 @@ export interface Service {
   readonly note: string | null;
   readonly foundIn: ReadonlyArray<string>;
   readonly updatedAt: string;
+  /** The product someone named for it, which Home groups by ahead of any guess; a rescan keeps it. */
+  readonly product: string | null;
 }
 export interface Check {
   readonly id: string;
@@ -95,7 +97,7 @@ export interface VendorDraft {
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS services (
   id TEXT PRIMARY KEY, vendor TEXT NOT NULL, label TEXT NOT NULL, target TEXT,
-  reachable INTEGER NOT NULL, note TEXT, found_in TEXT NOT NULL, updated_at TEXT NOT NULL);
+  reachable INTEGER NOT NULL, note TEXT, found_in TEXT NOT NULL, updated_at TEXT NOT NULL, product TEXT);
 CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY, service_id TEXT NOT NULL, kind TEXT NOT NULL, intent TEXT NOT NULL,
   config TEXT NOT NULL, key_id TEXT, cadence_seconds INTEGER NOT NULL, state TEXT NOT NULL,
@@ -142,6 +144,7 @@ const toService = (r: Row): Service => ({
   note: str(r.note),
   foundIn: parse(r.found_in, []),
   updatedAt: String(r.updated_at),
+  product: str(r.product),
 });
 const OUTCOMES: ReadonlySet<unknown> = new Set(["pass", "fail", "unknown"]);
 
@@ -221,13 +224,14 @@ export const openStore = (file: string) => {
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
   db.exec(SCHEMA);
   // Columns added after a database was first made.
-  if (!(db.prepare("PRAGMA table_info(checks)").all() as Array<Row>).some((column) => column.name === "pending"))
-    try {
-      db.exec("ALTER TABLE checks ADD COLUMN pending TEXT");
-    } catch (error) {
-      // Another process opening the same file added it first.
-      if (!String(error).includes("duplicate column name")) throw error;
-    }
+  for (const [table, column] of [["checks", "pending"], ["services", "product"]] as const)
+    if (!(db.prepare(`PRAGMA table_info(${table})`).all() as Array<Row>).some((c) => c.name === column))
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+      } catch (error) {
+        // Another process opening the same file added it first.
+        if (!String(error).includes("duplicate column name")) throw error;
+      }
   const all = (sql: string, ...params: Array<string | number | null>) =>
     db.prepare(sql).all(...params) as Array<Row>;
   const one = (sql: string, ...params: Array<string | number | null>) =>
@@ -285,7 +289,11 @@ export const openStore = (file: string) => {
       const row = one("SELECT * FROM services WHERE id = ?", id);
       return row === undefined ? null : toService(row);
     },
-    upsertService: (s: Service) =>
+    /** Names a service's product, or clears it with null; the rest of the service stays as it is. */
+    setServiceProduct: (id: string, product: string | null, at: string) =>
+      exec("UPDATE services SET product = ?, updated_at = ? WHERE id = ?", product, at, id),
+    /** Writes a service as a scan finds it, keeping any product someone named for it. */
+    upsertService: (s: Omit<Service, "product">) =>
       exec(
         `INSERT INTO services (id, vendor, label, target, reachable, note, found_in, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)

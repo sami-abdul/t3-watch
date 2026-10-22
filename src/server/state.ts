@@ -3,13 +3,16 @@ import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
-import type { Check, VendorDraft } from "./store.ts";
+import { productKey } from "./product-key.ts";
+import type { Check, Service, VendorDraft } from "./store.ts";
 import { cadenceOf, publicConfig, targetsOf } from "./targets.ts";
 
 export interface CheckView extends Omit<Check, "config"> {
   /** Its settings without secrets, from publicConfig; the page fetches them as stored for Edit. */
   readonly config: Readonly<Record<string, unknown>>;
   readonly serviceLabel: string;
+  /** The product someone named for its service, or null where Home guesses from names. */
+  readonly serviceProduct: string | null;
   readonly note: string | null;
   /** What the check contacts, in a sentence with no secret in it. */
   readonly target: string;
@@ -37,6 +40,9 @@ export const withTargets = (
   }),
 });
 
+/** What a check shows of its service: its label, or its id when the service is gone, and its product. */
+const serviceOf = (service: Service | undefined, id: string) => ({ serviceLabel: service?.label ?? id, serviceProduct: service?.product ?? null });
+
 /**
  * A vendor draft as the person decides on it: its name, the API it reads and how its test went. The
  * description itself stays out, since an agent may have written a key into its headers or queries.
@@ -59,7 +65,7 @@ const vendorDraftView = (draft: VendorDraft) => {
  */
 export const readState = (watch: Watch) => {
   const services = watch.store.services();
-  const labels = new Map(services.map((s) => [s.id, s.label]));
+  const byId = new Map(services.map((s) => [s.id, s]));
   const notes = watch.store.notes(200);
   const latestNote = new Map<string, string>();
   for (const note of notes)
@@ -72,7 +78,7 @@ export const readState = (watch: Watch) => {
   const checks: Array<CheckView> = stored.map((check) => ({
     ...check,
     config: publicConfig(check),
-    serviceLabel: labels.get(check.serviceId) ?? check.serviceId,
+    ...serviceOf(byId.get(check.serviceId), check.serviceId),
     note: latestNote.get(check.id) ?? null,
     target: target(check),
     cadence: cadenceOf(check.cadenceSeconds),
@@ -150,5 +156,16 @@ export const homeText = (state: WatchState) => {
   if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
   if (state.vendorDrafts.length > 0)
     lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => d.label).join(", ")}`);
+  // Products named by hand, as spelt, so an agent naming another service can reuse a name; only
+  // services with a check on, which are the ones Home groups.
+  // Grouped as Home groups them, by name without case, accents or punctuation.
+  const shown = new Set(on.map((c) => c.serviceId));
+  const named = new Map<string, { readonly name: string; readonly labels: Array<string> }>();
+  for (const service of state.services)
+    if (service.product !== null && shown.has(service.id)) {
+      const key = productKey(service.product);
+      named.set(key, { name: named.get(key)?.name ?? service.product, labels: [...(named.get(key)?.labels ?? []), service.label] });
+    }
+  if (named.size > 0) lines.push("", "Products named by hand:", ...[...named.values()].map(({ name, labels }) => `- ${name}: ${labels.join(", ")}`));
   return lines.join("\n");
 };

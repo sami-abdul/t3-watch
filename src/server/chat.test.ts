@@ -94,6 +94,48 @@ describe("mcp", () => {
     expect(homeText(state)).toContain("Vendor drafts waiting: Acme");
   });
 
+  it("names a service's product for Home, or goes back to the guess", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    watch.upsertService({ id: "custom:shop", vendor: "custom", label: "shop.example.com", target: "https://shop.example.com", reachable: true, note: null, foundIn: [] });
+    const { client } = await connect(watch);
+    const set = (serviceId: string, product: string) => client.callTool({ name: "watch_set_product", arguments: { serviceId, product } });
+    expect(firstText((await set("custom:shop", "  Storefront  ")) as never)).toBe("shop.example.com is now part of Storefront.");
+    expect(watch.store.service("custom:shop")!.product).toBe("Storefront");
+    expect(readState(watch).services.find((s) => s.id === "custom:shop")!.product).toBe("Storefront");
+    // Refused: a service Watch does not have, a name past 60 characters, one with control
+    // characters, and one with no letter or digit, which Home could not group by.
+    for (const [serviceId, product, error] of [
+      ["custom:nope", "Storefront", "No service custom:nope. watch_check shows a check's service, with its id."],
+      ["custom:shop", "x".repeat(61), "at most 60 characters"],
+      ["custom:shop", "Store\u0007front", "no control characters"],
+      ["custom:shop", "!!!", "needs a letter or a digit"],
+      ["custom:shop", "Store\u202Efront", "no control characters"],
+      ["custom:shop", "Shop\u200F (EU)", "no control characters"],
+      ["custom:shop", "Store\u{E0041}front", "no control characters"],
+      ["custom:shop", "東".repeat(61), "at most 60 characters"],
+    ] as const) {
+      const refused = await set(serviceId, product);
+      expect(refused.isError).toBe(true);
+      expect(firstText(refused as never)).toContain(error);
+    }
+    expect(watch.store.service("custom:shop")!.product).toBe("Storefront");
+    // The status names products named by hand, as spelt, for services Home shows, which have a
+    // check on; and a second spelling of one is pointed out.
+    watch.upsertService({ id: "custom:api", vendor: "custom", label: "api.example.com", target: "https://api.example.com", reachable: true, note: null, foundIn: [] });
+    expect(homeText(readState(watch))).not.toContain("Products named by hand");
+    watch.defineCheck({ id: "shop-up", serviceId: "custom:shop", kind: "http", intent: "Shop answers", config: { url: "https://shop.example.com/" }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    expect(homeText(readState(watch))).toContain("Products named by hand:\n- Storefront: shop.example.com");
+    // A product has one spelling: naming it in a new one respells it for its other services.
+    expect(firstText((await set("custom:api", "StoreFront")) as never)).toBe(
+      "api.example.com is now part of StoreFront. shop.example.com was in it under another spelling and now uses this one.",
+    );
+    expect([watch.store.service("custom:shop")!.product, watch.store.service("custom:api")!.product]).toEqual(["StoreFront", "StoreFront"]);
+    // Characters, not UTF-16 units, count toward the limit, and joiners some scripts and emoji need pass.
+    for (const name of ["\u{20000}".repeat(31), "می\u200Cخانه", "👩\u200D💻 Tools"]) expect((await set("custom:shop", name)).isError, name).toBeFalsy();
+    expect(firstText((await set("custom:shop", " ")) as never)).toBe("shop.example.com goes back to the product Watch guesses from names.");
+    expect(watch.store.service("custom:shop")!.product).toBeNull();
+  });
+
   it("serves the inline view with its own version written in, as the server reports it", async () => {
     const root = mkdtempSync(join(tmpdir(), "t3w-view-"));
     try {

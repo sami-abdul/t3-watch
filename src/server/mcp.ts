@@ -28,6 +28,7 @@ Roles: the page is for knowing and deciding (turn on, pause, edit, delete, add k
 
 - Start with watch_home to show the state (it renders inline where the host supports it) or watch_status for text.
 - Investigate a check with watch_check, then use gh, aws, logs or the repo to find the cause. Leave your conclusion with watch_note so it shows on the page.
+- Home groups checks by product, guessed from names. When the person says a service belongs to another product, such as a site whose repository has another name, set it with watch_set_product; naming the site's product after the repository brings the repository along.
 - First setup: the person chooses on the page what Watch may read, folders and logins, and presses Scan these; watch_sources shows that choice, and watch_scan refuses until it exists. Then show the result of the scan and let the person tick what to keep on the page or answer in words; then watch_apply.
 - New checks: watch_draft_check. It runs once and waits for the person; never assume it is on. To change or remove a check, the person uses Edit or Delete in Details on the page, or you draft a replacement. A deleted check keeps its history, which watch_check still reads, and only the person restores it, under Deleted checks in Details. New vendors: watch_draft_vendor with a JSON description (see catalog/*.json in the t3-watch repo for the shape); GET-only, https origin.
 - Never ask for, accept or repeat a key or token in chat. Keys are added on the page (Add key).
@@ -278,6 +279,26 @@ export const makeMcpServer = (
     safely(async ({ checkId, text: note }: { checkId: string | null; text: string }) => {
       addNote(watch, checkId, note);
       return text("Noted.");
+    }),
+  );
+
+  server.registerTool(
+    "watch_set_product",
+    {
+      description:
+        "Names the product a service belongs to on Home, for when Watch's guess from names is wrong, such as a site whose repository has another name. A site or repository with no product of its own joins a named product whose name matches its own, and a repository follows the site it matches. Names compare without case, accents or punctuation; a product has one spelling, so naming it in a new one respells it for its other services. An empty product goes back to the guess. Only how Home groups checks changes.",
+      inputSchema: z.object({
+        serviceId: z.string().describe("The service's id, which watch_check shows"),
+        product: z.string().max(1000).describe("At most 60 characters, with a letter or a digit; empty goes back to the guess"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    safely(async ({ serviceId, product }: { serviceId: string; product: string }) => {
+      const { service, respelt } = watch.setServiceProduct(serviceId, product);
+      if (service.product === null) return text(`${service.label} goes back to the product Watch guesses from names.`);
+      const one = respelt.length === 1;
+      const also = respelt.length === 0 ? "" : ` ${respelt.join(", ")} ${one ? "was" : "were"} in it under another spelling and now ${one ? "uses" : "use"} this one.`;
+      return text(`${service.label} is now part of ${service.product}.${also}`);
     }),
   );
 

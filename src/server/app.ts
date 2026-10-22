@@ -9,6 +9,7 @@ import type { Reads } from "./config.ts";
 import { makeConnectivity } from "./connectivity.ts";
 import { openKeyring } from "./keys.ts";
 import type { Deps } from "./proc.ts";
+import { productKey } from "./product-key.ts";
 import { makeRunner } from "./runner.ts";
 import { applyScan, makeScanner } from "./scan.ts";
 import { type ChangeEvent, type Check, type KeyRecord, openStore, type Service, type Store } from "./store.ts";
@@ -181,8 +182,29 @@ const makeCore = (options: WatchOptions) => {
     addKey,
     removeKey,
     keys: () => store.keys().map(publicKey),
-    upsertService: (service: Omit<Service, "updatedAt">) =>
+    upsertService: (service: Omit<Service, "updatedAt" | "product">) =>
       store.upsertService({ ...service, updatedAt: now() }),
+    /**
+     * Names the product a service belongs to on Home, or with an empty name goes back to the guess
+     * from names. Only how Home groups checks changes. A product has one spelling: naming it in a
+     * new one respells it for its other services too, which are returned.
+     */
+    setServiceProduct: (serviceId: string, product: string) => {
+      if (store.service(serviceId) === null) throw new WatchError(`No service ${serviceId}. watch_check shows a check's service, with its id.`, 404);
+      const name = product.trim().replace(/\s+/g, " ");
+      if ([...name].length > 60) throw new WatchError("A product name has at most 60 characters");
+      // Control characters, and invisible ones that turn text around or hide in it, which could make
+      // a name read as another; the joiners some scripts and emoji need stay allowed.
+      if (/[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/u.test(name))
+        throw new WatchError("A product name is plain text, with no control characters");
+      const key = productKey(name);
+      if (name !== "" && key === "") throw new WatchError("A product name needs a letter or a digit");
+      const at = now();
+      store.setServiceProduct(serviceId, name === "" ? null : name, at);
+      const respelt = name === "" ? [] : store.services().filter((s) => s.id !== serviceId && s.product !== null && s.product !== name && productKey(s.product) === key);
+      for (const other of respelt) store.setServiceProduct(other.id, name, at);
+      return { service: store.service(serviceId)!, respelt: respelt.map((s) => s.label) };
+    },
     /** Adds or updates a check definition, keeping state for a check that already exists. */
     defineCheck: (
       definition: Pick<Check, "id" | "serviceId" | "kind" | "intent" | "config" | "keyId" | "cadenceSeconds" | "origin">,

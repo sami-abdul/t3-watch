@@ -30,6 +30,33 @@ describe("store", () => {
     }
   });
 
+  it("adds the product column to a database made before it existed, and keeps a product through a rescan", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t3w-store-"));
+    try {
+      const file = join(dir, "watch.sqlite");
+      const old = new DatabaseSync(file);
+      old.exec(`CREATE TABLE services (
+        id TEXT PRIMARY KEY, vendor TEXT NOT NULL, label TEXT NOT NULL, target TEXT,
+        reachable INTEGER NOT NULL, note TEXT, found_in TEXT NOT NULL, updated_at TEXT NOT NULL);
+        INSERT INTO services VALUES ('custom:shop', 'custom', 'shop.example.com', 'https://shop.example.com', 1, NULL, '[]', '2026-10-15T10:00:00Z');`);
+      old.close();
+      const store = openStore(file);
+      expect(store.service("custom:shop")).toMatchObject({ label: "shop.example.com", product: null });
+      store.setServiceProduct("custom:shop", "Storefront", "2026-10-15T10:01:00Z");
+      expect(store.service("custom:shop")).toMatchObject({ product: "Storefront", updatedAt: "2026-10-15T10:01:00Z" });
+      // A rescan writes the service again and keeps the name someone gave its product.
+      store.upsertService({ id: "custom:shop", vendor: "custom", label: "Shop", target: "https://shop.example.com", reachable: true, note: null, foundIn: ["shop"], updatedAt: "2026-10-15T11:00:00Z" });
+      expect(store.service("custom:shop")).toMatchObject({ label: "Shop", product: "Storefront" });
+      store.setServiceProduct("custom:shop", null, "2026-10-15T11:01:00Z");
+      expect(store.service("custom:shop")!.product).toBeNull();
+      store.close();
+      // Opening it again finds the column there already.
+      openStore(file).close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("clears a pending run when a removed key pauses its check, and reads only well-formed ones", () => {
     const dir = mkdtempSync(join(tmpdir(), "t3w-store-"));
     try {

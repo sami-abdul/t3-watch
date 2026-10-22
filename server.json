@@ -3,7 +3,7 @@
   "name": "ai.lfglabs/t3-watch",
   "title": "t3-watch",
   "description": "An agent on call for the things nobody watches. Checks run free; your agent wakes only on a change.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "websiteUrl": "https://github.com/sami-abdul/t3-watch#readme",
   "repository": {
     "url": "https://github.com/sami-abdul/t3-watch",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@lfg-labs/t3-watch",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

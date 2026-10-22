@@ -2,6 +2,7 @@ import { NO_RUNS_NOTE } from "../server/notices.ts";
 import type { AccessRow, FoundService, Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import type { CheckKind } from "../server/store.ts";
+import { productKey } from "../server/product-key.ts";
 import type { CheckEditInput, CheckSettings } from "./client.ts";
 
 export type PageView = "scanning" | "empty" | "review" | "home";
@@ -214,15 +215,14 @@ export const alertsNotice = (state: WatchState): { readonly text: string; readon
 /** A secret made on this page while alerts are on: the T3 task needs it until an alert gets through. */
 export const needsHandover = (alerts: Alerts, madeSecret: boolean) => madeSecret && alerts.on && latestAlertResult(alerts)?.ok !== true;
 
-const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const kindAndName = (serviceId: string) => {
   const colon = serviceId.indexOf(":");
   return colon === -1 ? { kind: "", name: serviceId } : { kind: serviceId.slice(0, colon), name: serviceId.slice(colon + 1) };
 };
 
-/** A repository's name without its owner, once case and punctuation go. */
-const repoName = (fullName: string) => plain(fullName.slice(fullName.lastIndexOf("/") + 1));
+/** A repository's name without its owner, compared as product names are. */
+const repoName = (fullName: string) => productKey(fullName.slice(fullName.lastIndexOf("/") + 1));
 
 const add = (map: Map<string, Set<string>>, name: string, value: string) => map.set(name, (map.get(name) ?? new Set<string>()).add(value));
 
@@ -230,35 +230,64 @@ const add = (map: Map<string, Set<string>>, name: string, value: string) => map.
 const one = (values: ReadonlySet<string> | undefined) => (values?.size === 1 ? [...values][0]! : null);
 
 /**
- * Each check's product. A site or job service is a product, and a repository joins it when their
- * names match once case and punctuation go and no other site or repository has that name. A site
- * whose id is its name cut short also matches by its full name. Anything else is a product of its
- * own: a repository with its owner, so two repositories of one name never merge, a vendor, an AWS
- * account.
+ * Each check's product. A product someone named for a service comes first. A repository or site
+ * with no name of its own joins a named product whose name matches its own, a repository follows
+ * the site it matches into that site's named product, and names compare without case, accents or
+ * punctuation in any script. Otherwise a site or job service is a product, and a repository joins
+ * it when their names match once case and punctuation go and no other site or repository has that
+ * name. A site whose id is its name cut short also matches by its full name. Anything else is a
+ * product of its own: a repository with its owner, so two repositories of one name never merge, a
+ * vendor, an AWS account.
  */
-export const productsOf = (checks: ReadonlyArray<Pick<CheckView, "serviceId" | "serviceLabel">>) => {
+export const productsOf = (checks: ReadonlyArray<Pick<CheckView, "serviceId" | "serviceLabel" | "serviceProduct">>) => {
   const sites = new Map<string, Set<string>>();
   const labels = new Map<string, string>();
   const repos = new Map<string, Set<string>>();
-  for (const { serviceId, serviceLabel } of checks) {
+  // Named products by their key, with each spelling used, and the key each named service has.
+  const named = new Map<string, Set<string>>();
+  const nameOf = new Map<string, string>();
+  // Each site's names to match by: its id, and the full name the id was cut from. Every name here
+  // compares as product names do, so a site, a repository and a product of one name meet.
+  const namesOf = new Map<string, ReadonlyArray<string>>();
+  for (const { serviceId, serviceLabel, serviceProduct } of checks) {
+    // A string only: a state from a Watch older than this page has no product at all.
+    const key = typeof serviceProduct === "string" ? productKey(serviceProduct) : "";
+    if (key !== "") {
+      add(named, key, serviceProduct!);
+      nameOf.set(serviceId, key);
+    }
     const { kind, name } = kindAndName(serviceId);
     if (kind === "github") add(repos, repoName(name), name);
-    const id = plain(name);
-    if (kind !== "custom" || id === "") continue;
+    if (kind !== "custom") continue;
     labels.set(serviceId, serviceLabel);
-    add(sites, id, serviceId);
+    const id = productKey(name);
+    const full = productKey(serviceLabel);
     // Only a name the id was cut from: a label such as "Website" must not claim a website repository.
-    const full = plain(serviceLabel);
-    if (full.length > id.length && full.startsWith(id)) add(sites, full, serviceId);
+    const names = [id, ...(full.length > id.length && full.startsWith(id) ? [full] : [])].filter((n) => n !== "");
+    namesOf.set(serviceId, names);
+    for (const n of names) add(sites, n, serviceId);
   }
-  return (check: Pick<CheckView, "serviceId" | "serviceLabel">) => {
+  // One product for each name, shown as the first spelling met; Watch keeps one spelling for each.
+  const namedProduct = (key: string) => ({ key: `product:${key}`, label: [...named.get(key)!][0]! });
+  /** A service that is not a repository: its own product's name, a named product of its own name, or itself. */
+  const productOfService = (serviceId: string, label: string) => {
+    const own = nameOf.get(serviceId);
+    if (own !== undefined) return namedProduct(own);
+    for (const n of namesOf.get(serviceId) ?? []) if (named.has(n)) return namedProduct(n);
+    return { key: serviceId, label };
+  };
+  return (check: Pick<CheckView, "serviceId" | "serviceLabel" | "serviceProduct">) => {
     const { kind, name } = kindAndName(check.serviceId);
-    if (kind === "github") {
+    if (kind === "github" && !nameOf.has(check.serviceId)) {
       const repo = repoName(name);
-      const site = one(sites.get(repo));
-      if (site !== null && one(repos.get(repo)) !== null) return { key: site, label: labels.get(site)! };
+      if (one(repos.get(repo)) !== null) {
+        // With its own site, wherever the site goes, so the two stay together whatever is named.
+        const site = one(sites.get(repo));
+        if (site !== null) return productOfService(site, labels.get(site)!);
+        if (named.has(repo)) return namedProduct(repo);
+      }
     }
-    return { key: check.serviceId, label: check.serviceLabel };
+    return productOfService(check.serviceId, check.serviceLabel);
   };
 };
 
