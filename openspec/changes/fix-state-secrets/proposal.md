@@ -20,6 +20,15 @@ secrets out of the sentence that says what a check contacts and kept the rest as
   has no Edit and points to the page for the ping address.
 - **Drafts still wire jobs.** `watch_draft_check` keeps giving the agent the ping URL of the
   heartbeat check it drafts, which it needs to add the ping to the job.
+- **An independent review's five findings**, each checked before it was fixed. Every answer that
+  carries a check, such as a pause sent with the agents' token, carries it without secrets. A
+  vendor draft reaches the state as its name, the API it reads and its test, never its
+  description, where an agent may have written a key into a header or a query. An address shows
+  only path parts known to be safe, since a short or letters-only token is not told from a word.
+  The settings route is a POST, which a browser sends with its Origin even on plain HTTP away from
+  localhost, and it answers with one read of the stored check, so Edit saves against the version
+  its settings came from.
+- **Released** as 0.4.1, with the registry entry moved to it.
 
 ## Capabilities
 
@@ -35,5 +44,6 @@ None.
 ## Impact
 
 `src/server/targets.ts`, `src/server/state.ts`, `src/server/mcp.ts`, `src/server/http.ts`,
-`src/web/client.ts`, `src/web/app-entry.tsx`, `src/web/logic.ts`, `src/web/Details.tsx`, with tests.
+`src/web/client.ts`, `src/web/app-entry.tsx`, `src/web/logic.ts`, `src/web/Details.tsx`,
+`src/web/Home.tsx`, with tests, and `package.json` and `server.json` for 0.4.1.
 No migration: stored settings do not change, only what each read shows of them.

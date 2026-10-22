@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Run } from "../server/store.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
-import type { CheckEditInput, WatchClient } from "./client.ts";
+import type { CheckEditInput, CheckSettings, WatchClient } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
 import { cn } from "~/lib/utils";
@@ -42,18 +42,18 @@ function Runs({ client, check }: { readonly client: WatchClient; readonly check:
 /** Edit for one check: its name, how often it runs and its settings. Watch says what it refuses. */
 function EditPanel({
   check,
-  config,
+  stored,
   onSave,
   onCancel,
 }: {
   readonly check: CheckView;
-  /** The check's settings as stored, fetched when Edit was pressed. */
-  readonly config: Readonly<Record<string, unknown>>;
+  /** One read of the stored check, fetched when Edit was pressed: the form starts from it alone. */
+  readonly stored: CheckSettings;
   readonly onSave: (edit: CheckEditInput) => Promise<void>;
   readonly onCancel: () => void;
 }) {
   // Taken once, so a refresh while the person types leaves what they typed.
-  const [form, setForm] = useState<EditForm>(() => editFormOf(check, config));
+  const [form, setForm] = useState<EditForm>(() => editFormOf(stored));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const save = async () => {
@@ -163,21 +163,41 @@ export function Details({
       current = false;
     };
   }, [client, configured, state.generatedAt]);
-  const act = async (work: () => Promise<unknown>) => {
-    setError(null);
+  // A read on request changes nothing, so it skips reading the state again afterwards, and leaves
+  // an error from something else on show.
+  const act = async (work: () => Promise<unknown>, { refresh: reread = true } = {}) => {
+    if (reread) setError(null);
     try {
       await work();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      refresh();
+      if (reread) refresh();
     }
   };
   // One check at a time is edited, from its settings as stored, or asked about before it is deleted.
-  const [editing, setEditing] = useState<{ readonly id: string; readonly config: Readonly<Record<string, unknown>> } | null>(null);
+  const [editing, setEditing] = useState<{ readonly id: string; readonly stored: CheckSettings } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  // Heartbeat ping addresses the person asked to see, which the state leaves out.
+  // The check whose settings Edit last asked for: only that answer opens a form, so a later click,
+  // or Delete, wins over an earlier read still under way.
+  const asked = useRef<string | null>(null);
+  // Heartbeat ping addresses the person asked to see, which the state leaves out, by check: a
+  // check's ping token never changes, whatever else about it does.
   const [pings, setPings] = useState<Readonly<Record<string, string>>>({});
+  // Reads under way, for Edit or a ping address: shown as loading, and one at a time for each, the
+  // guard kept apart from rendering so two quick clicks cannot both pass it.
+  const [reading, setReading] = useState<ReadonlySet<string>>(new Set());
+  const underWay = useRef(new Set<string>());
+  const readFor = (key: string, work: () => Promise<unknown>) => {
+    if (underWay.current.has(key)) return;
+    underWay.current.add(key);
+    setReading(new Set(underWay.current));
+    void act(work, { refresh: false }).finally(() => {
+      underWay.current.delete(key);
+      setReading(new Set(underWay.current));
+    });
+  };
+  const pingKey = (check: CheckView) => check.id;
   const editingCheck =
     editing === null || client.editCheck === null ? null : (state.checks.find((c) => c.id === editing.id && canEdit(c)) ?? null);
   // A check deleted or turned into something else meanwhile closes its form, or its question.
@@ -229,14 +249,16 @@ export function Details({
         <Button size="compact" variant="ghost" onClick={() => act(() => client.setCheck(check.id, "run"))}>
           Run now
         </Button>
-        {check.kind === "heartbeat" && client.checkSettings !== null && pings[check.id] === undefined ? (
+        {check.kind === "heartbeat" && client.checkSettings !== null && pings[pingKey(check)] === undefined ? (
           <Button
             size="compact"
             variant="ghost"
+            loading={reading.has(`ping:${check.id}`)}
             onClick={() =>
-              act(async () => {
+              readFor(`ping:${check.id}`, async () => {
                 const { pingPath } = await client.checkSettings!(check.id);
-                if (pingPath !== null) setPings((shown) => ({ ...shown, [check.id]: pingPath }));
+                if (pingPath === null) throw new Error("This check has no ping address. Draft it again for a new one.");
+                setPings((shown) => ({ ...shown, [pingKey(check)]: pingPath }));
               })
             }
           >
@@ -247,18 +269,29 @@ export function Details({
           <Button
             size="compact"
             variant="ghost"
-            onClick={() =>
-              act(async () => {
+            loading={reading.has(`edit:${check.id}`)}
+            onClick={() => {
+              asked.current = check.id;
+              readFor(`edit:${check.id}`, async () => {
+                const stored = await client.checkSettings!(check.id);
+                if (asked.current !== check.id) return;
                 setDeleting(null);
-                setEditing({ id: check.id, config: (await client.checkSettings!(check.id)).config });
-              })
-            }
+                setEditing({ id: check.id, stored });
+              });
+            }}
           >
             Edit
           </Button>
         ) : null}
         {client.deleteCheck !== null && canDelete(check) ? (
-          <Button size="compact" variant="ghost" onClick={() => setDeleting(check.id)}>
+          <Button
+            size="compact"
+            variant="ghost"
+            onClick={() => {
+              asked.current = null;
+              setDeleting(check.id);
+            }}
+          >
             Delete
           </Button>
         ) : null}
@@ -284,7 +317,7 @@ export function Details({
           <EditPanel
             key={editingCheck.id}
             check={editingCheck}
-            config={editing!.config}
+            stored={editing!.stored}
             onCancel={() => setEditing(null)}
             onSave={async (edit) => {
               await client.editCheck!(editingCheck.id, edit);
@@ -311,8 +344,8 @@ export function Details({
                         check.lastSummary === null ? "Not run yet" : `${check.lastSummary} · ${ago(check.lastRunAt, now)}`,
                         check.kind !== "heartbeat"
                           ? null
-                          : pings[check.id] !== undefined
-                            ? `Ping ${location.origin}${pings[check.id]} from the job (add ?status=fail on failure)`
+                          : pings[pingKey(check)] !== undefined
+                            ? `Ping ${location.origin}${pings[pingKey(check)]} from the job (add ?status=fail on failure)`
                             : client.checkSettings === null
                               ? "Its ping address shows on the Watch page"
                               : null,

@@ -2,7 +2,7 @@ import { NO_RUNS_NOTE } from "../server/notices.ts";
 import type { AccessRow, FoundService, Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import type { CheckKind } from "../server/store.ts";
-import type { CheckEditInput } from "./client.ts";
+import type { CheckEditInput, CheckSettings } from "./client.ts";
 
 export type PageView = "scanning" | "empty" | "review" | "home";
 
@@ -361,19 +361,17 @@ export interface EditForm {
 const SETTINGS_KINDS: ReadonlyArray<CheckKind> = ["http", "github", "aws_metric", "heartbeat"];
 
 /**
- * The form as a check stands, with its settings as stored, which the page fetches since the state
- * carries them without secrets, and a heartbeat's ping token left out: it never changes here. The
- * check's own `updatedAt` goes with the form, so Watch refuses it if the check changed meanwhile.
+ * The form from one read of the stored check, which the page fetches since the state carries its
+ * settings without secrets, and which comes without a heartbeat's ping token: its name, cadence and
+ * settings, and the version they came from, so Watch refuses the save if the check changed since,
+ * never pairing older settings with a newer version.
  */
-export const editFormOf = (check: Pick<CheckView, "intent" | "cadenceSeconds" | "kind" | "updatedAt">, config: Readonly<Record<string, unknown>>): EditForm => {
-  const { token: _, ...rest } = config;
-  return {
-    intent: check.intent,
-    minutes: String(check.cadenceSeconds / 60),
-    settings: SETTINGS_KINDS.includes(check.kind) ? JSON.stringify(check.kind === "heartbeat" ? rest : config, null, 2) : null,
-    updatedAt: check.updatedAt,
-  };
-};
+export const editFormOf = (stored: Pick<CheckSettings, "intent" | "cadenceSeconds" | "kind" | "config" | "updatedAt">): EditForm => ({
+  intent: stored.intent,
+  minutes: String(stored.cadenceSeconds / 60),
+  settings: SETTINGS_KINDS.includes(stored.kind) ? JSON.stringify(stored.config, null, 2) : null,
+  updatedAt: stored.updatedAt,
+});
 
 /** The edit to send, or why the settings are not JSON. Watch checks everything else and says what is wrong. */
 export const editOf = (form: EditForm): { readonly edit: CheckEditInput } | { readonly error: string } => {

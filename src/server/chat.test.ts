@@ -13,6 +13,7 @@ import { loadConfig, readsOf, saveConfig, type WatchConfig } from "./config.ts";
 import { decideDraft, draftCheck, draftVendor } from "./drafts.ts";
 import { extendServer } from "./extend.ts";
 import { makeHttpServer } from "./http.ts";
+import { homeText, readState } from "./state.ts";
 import { startSession } from "./signin.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
 import { VERSION_MARK } from "./version-mark.ts";
@@ -69,6 +70,28 @@ describe("mcp", () => {
     for (const result of results) expect(JSON.stringify(result)).not.toMatch(new RegExp(`${token}|open-sesame|key=abc|/hb/`));
     expect(JSON.stringify(results[0])).toContain("https://api.example/v1?…");
     expect(JSON.stringify(results[2])).toContain("https://api.example/v1?…");
+  });
+
+  it("shows a vendor draft by its name, the API it reads and its test, never its description", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    // An agent wrote secrets where a description takes free text: a header, the key check's query,
+    // and a check's query.
+    await draftVendor(watch, {
+      id: "acme",
+      label: "Acme",
+      detect: {},
+      key: { envNames: ["ACME_KEY"], keyUrl: "https://acme.test/keys", auth: { type: "bearer" }, headers: { "X-Acme-Secret": "header-secret-value" } },
+      api: { origin: "https://api.acme.test" },
+      keyCheck: { path: "/me", query: { token: "keycheck-secret-value" } },
+      checks: [{ type: "fresh", id: "orders", intent: "Orders keep coming", path: "/orders", query: { apikey: "check-secret-value" }, items: "data", time: "at", maxAgeSeconds: 3600 }],
+    }); // gitleaks:allow
+    const leaks = /header-secret-value|keycheck-secret-value|check-secret-value/;
+    const state = readState(watch);
+    expect(state.vendorDrafts).toEqual([{ id: "vendor-acme", label: "Acme", origin: "https://api.acme.test", testSummary: expect.any(String), createdAt: expect.any(String) }]);
+    expect(JSON.stringify(state)).not.toMatch(leaks);
+    const { client } = await connect(watch);
+    expect(JSON.stringify(await client.callTool({ name: "watch_state", arguments: {} }))).not.toMatch(leaks);
+    expect(homeText(state)).toContain("Vendor drafts waiting: Acme");
   });
 
   it("serves the inline view with its own version written in, as the server reports it", async () => {

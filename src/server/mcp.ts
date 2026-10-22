@@ -16,7 +16,7 @@ import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "
 import { readSources } from "./scan.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import { homeText, readState, withTargets } from "./state.ts";
-import { publicConfig } from "./targets.ts";
+import { pingPath, publicCheck } from "./targets.ts";
 import { packageVersion } from "./version.ts";
 import { VERSION_MARK } from "./version-mark.ts";
 
@@ -127,7 +127,7 @@ export const makeMcpServer = (
       if (check === null) throw new Error(`No check ${checkId}. watch_status lists them.`);
       return text(
         json({
-          check: { ...check, config: publicConfig(check) },
+          check: publicCheck(check),
           service: watch.store.service(check.serviceId),
           runs: watch.store.runs(checkId, 10),
           notes: watch.store.notes(200).filter((n) => n.checkId === checkId).slice(0, 5),
@@ -229,7 +229,7 @@ export const makeMcpServer = (
     },
     safely(async (input: z.input<typeof DraftCheckInput>) => {
       const { check, result } = await draftCheck(watch, input);
-      const ping = check.kind === "heartbeat" ? ` Ping URL: ${options.pageUrl()}/hb/${String(check.config.token)}` : "";
+      const ping = check.kind === "heartbeat" ? ` Ping URL: ${options.pageUrl()}${pingPath(String(check.config.token))}` : "";
       return text(`Drafted "${check.intent}" (${check.id}). It ran once: ${result.outcome}, ${result.summary}. The person turns it on from Watch.${ping}`);
     }),
   );

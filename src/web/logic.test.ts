@@ -4,9 +4,6 @@ import type { Scan } from "../server/scan.ts";
 import type { CheckView, WatchState } from "../server/state.ts";
 import { accessRows, alertSteps, alertsNotice, applyChanges, canDelete, canEdit, editFormOf, editOf, isNewCheck, latestAlertResult, needsHandover, newChecksToReview, productGroups, productsOf, productSummary, applyPayload, defaultTicks, homeModel, pageView, reviewGroups, toggle, watchLabel } from "./logic.ts";
 
-/** A heartbeat ping token for tests, not a secret. */
-const PING_TOKEN = "abcdefghijklmnop1234"; // gitleaks:allow
-
 const scan: Scan = {
   scannedAt: "2026-10-15T10:00:00.000Z",
   roots: ["/r"],
@@ -289,25 +286,29 @@ describe("Edit and Delete", () => {
     ]);
   });
 
-  it("start from the check as it stands and its settings as stored, with a heartbeat's token and a vendor check's settings left out", () => {
+  it("start from one read of the stored check, with a vendor check's settings left out", () => {
     // The state carries the address without its secrets; Edit starts from it as stored, so saving
     // it unchanged keeps them.
-    const stored = { url: "https://monitor:open-sesame@shop.example/?key=abc", contains: "Welcome" }; // gitleaks:allow
-    const site = check({ intent: "Site answers", cadenceSeconds: 900, kind: "http", config: { url: "https://shop.example/?…", contains: "Welcome" }, updatedAt: "2026-10-15T09:00:00Z" });
-    expect(editFormOf(site, stored)).toEqual({
-      intent: "Site answers",
-      minutes: "15",
-      settings: JSON.stringify(stored, null, 2),
-      updatedAt: "2026-10-15T09:00:00Z",
-    });
+    const config = { url: "https://monitor:open-sesame@shop.example/?key=abc", contains: "Welcome" }; // gitleaks:allow
+    const stored = { intent: "Site answers", cadenceSeconds: 900, kind: "http" as const, config, updatedAt: "2026-10-15T09:00:00Z" };
+    expect(editFormOf(stored)).toEqual({ intent: "Site answers", minutes: "15", settings: JSON.stringify(config, null, 2), updatedAt: "2026-10-15T09:00:00Z" });
     // A cadence that is not whole minutes shows as it is, and goes back unchanged.
-    expect(editFormOf(check({ cadenceSeconds: 90 }), {}).minutes).toBe("1.5");
-    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300 }), { token: PING_TOKEN, periodSeconds: 3600 });
-    expect(ping.settings).not.toContain(PING_TOKEN);
-    expect(JSON.parse(ping.settings!)).toEqual({ periodSeconds: 3600 });
-    expect(editFormOf(check({ kind: "vendor" }), { vendor: "stripe", check: "key" }).settings).toBeNull();
+    expect(editFormOf({ ...stored, cadenceSeconds: 90 }).minutes).toBe("1.5");
+    // A heartbeat's settings come without its ping token, which never changes here.
+    expect(JSON.parse(editFormOf({ ...stored, kind: "heartbeat", config: { periodSeconds: 3600 } }).settings!)).toEqual({ periodSeconds: 3600 });
+    expect(editFormOf({ ...stored, kind: "vendor", config: { vendor: "stripe", check: "key" } }).settings).toBeNull();
     // A kind from another build of Watch keeps its settings out of the form, so a rename still saves.
-    expect(editFormOf(check({ kind: "dns" as never }), { name: "shop.example" }).settings).toBeNull();
+    expect(editFormOf({ ...stored, kind: "dns" as never, config: { name: "shop.example" } }).settings).toBeNull();
+  });
+
+  it("save against the version its settings came from, never a newer one the page read since", () => {
+    // Settings read before another tab saved, while the page's state already shows that save: the
+    // form keeps the older version, so Watch refuses the save instead of writing old settings back.
+    const older = { intent: "Site answers", cadenceSeconds: 900, kind: "http" as const, config: { url: "https://old.example/" }, updatedAt: "2026-10-15T09:00:00Z" };
+    const form = editFormOf(older);
+    expect(form.updatedAt).toBe("2026-10-15T09:00:00Z");
+    expect(JSON.parse(form.settings!)).toEqual({ url: "https://old.example/" });
+    expect(editOf(form)).toMatchObject({ edit: { updatedAt: "2026-10-15T09:00:00Z", config: { url: "https://old.example/" } } });
   });
 
   it("send what was typed, and stop only at settings that are not JSON", () => {

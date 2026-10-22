@@ -35,11 +35,19 @@ describe("check targets", () => {
     const url = target("http", { url: "https://user:pass@status.example.com/health?token=abc123" });
     expect(url).toBe("GET https://status.example.com/health?…");
     expect(url).not.toMatch(/pass|abc123/);
-    // A capability URL carries its token in the path.
+    // A capability URL carries its token in the path, long or short, mixed case or not: only parts
+    // known to be safe show.
     expect(target("http", { url: "https://hooks.example.com/api/7f3c9e1b2a4d5c6e8f90/health" })).toBe("GET https://hooks.example.com/api/…/health");
-    expect(target("http", { url: "https://hooks.example.com/t/AbCdEfGhIjKlMnOpQrStUvWx/ping" })).toBe("GET https://hooks.example.com/t/…/ping");
-    // A malformed escape is shown as written, never thrown: the state read depends on it.
-    expect(target("http", { url: "https://x.test/a%zzb" })).toBe("GET https://x.test/a%zzb");
+    expect(target("http", { url: "https://hooks.example.com/t/AbCdEfGhIjKlMnOpQrStUvWx/ping" })).toBe("GET https://hooks.example.com/…/…/ping");
+    expect(target("http", { url: "https://hc.example.com/ping/AbCdEfGhIjKlMnOp" })).toBe("GET https://hc.example.com/ping/…");
+    expect(target("http", { url: "https://hc.example.com/ping/kqzmxbwr" })).toBe("GET https://hc.example.com/ping/…");
+    expect(target("http", { url: "https://hc.example.com/ping/AbCd" })).toBe("GET https://hc.example.com/ping/…");
+    expect(target("http", { url: "https://hooks.example/t/Qx/run" })).toBe("GET https://hooks.example/…/…/…");
+    // Words a check asks for and versions stay readable; anything else, a language tag included, does not.
+    expect(target("http", { url: "https://api.example.com/v2/status.json" })).toBe("GET https://api.example.com/v2/status.json");
+    expect(target("http", { url: "https://shop.example.com/en-us/Search" })).toBe("GET https://shop.example.com/…/Search");
+    // A malformed escape is hidden like any other part, never thrown: the state read depends on it.
+    expect(target("http", { url: "https://x.test/a%zzb" })).toBe("GET https://x.test/…");
   });
 
   it("stays readable when a config is missing parts", () => {
@@ -69,6 +77,14 @@ describe("check targets", () => {
     expect(config("api")).toEqual({ url: "https://api.example/v1/status?…", contains: "ok" });
     expect(config("hb")).toEqual({ periodSeconds: 3600 });
     expect(config("ci")).toEqual({ repo: "acme/api", branch: "main" });
+    // Only the settings a kind may show: a field no kind has, or any setting of a kind this build
+    // does not know, stays out.
+    define("ci-extra", "github", { repo: "acme/api", password: "hunter2-in-a-field" }); // gitleaks:allow
+    define("future", "dns", { name: "shop.example", apiToken: "future-kind-secret" }); // gitleaks:allow
+    const again = readState(watch);
+    expect(again.checks.find((c) => c.id === "ci-extra")!.config).toEqual({ repo: "acme/api" });
+    expect(again.checks.find((c) => c.id === "future")!.config).toEqual({});
+    expect(JSON.stringify(again)).not.toMatch(/hunter2|future-kind-secret/);
     // Nowhere in the state, a ping address included, and the stored settings stay as they were.
     expect(JSON.stringify(state)).not.toMatch(/hunter2|key=abc|hb-secret-token|\/hb\//);
     expect(watch.store.check("api")!.config.url).toBe(stored);

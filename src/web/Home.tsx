@@ -158,8 +158,8 @@ export function Home({
               })),
               ...state.vendorDrafts.map((draft) => ({
                 key: draft.id,
-                title: `New vendor: ${String(draft.description.label ?? draft.id)}`,
-                detail: draft.testSummary ?? "Not tested yet",
+                title: `New vendor: ${draft.label}`,
+                detail: joinParts(draft.origin === null ? null : `Reads ${draft.origin}`, draft.testSummary ?? "Not tested yet"),
                 action: (
                   <>
                     <Button size="compact" variant="ghost" onClick={() => act(draft.id, () => client.draft(draft.id, "discard", "vendor"))}>

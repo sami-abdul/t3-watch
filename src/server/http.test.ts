@@ -153,19 +153,45 @@ describe("http", () => {
     );
     watch.defineCheck({ id: "api", serviceId: "s", kind: "http", intent: "API answers", config: { url: stored }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
     const cookie = `t3w=${startSession(watch.store, watch.deps.now())}`;
-    const page = { cookie, "sec-fetch-site": "same-origin" };
-    const get = (id: string, headers: Record<string, string>) => fetch(`${base}/api/checks/${id}/settings`, { headers });
+    // On plain HTTP away from localhost a browser sends no fetch metadata, only its Origin, and that
+    // only with a POST.
+    const page = { cookie, origin: base };
+    const ask = (id: string, headers: Record<string, string>) => fetch(`${base}/api/checks/${id}/settings`, { method: "POST", headers });
     // Neither the token agents hold nor a page on another site may read them.
-    const agent = await get("h", { authorization: "Bearer test-token-123" });
+    const agent = await ask("h", { authorization: "Bearer test-token-123" });
     expect(agent.status).toBe(403);
     expect(((await agent.json()) as { error: string }).error).toBe("A check's stored settings show on the Watch page");
-    expect((await get("h", { cookie, "sec-fetch-site": "cross-site" })).status).toBe(403);
-    expect(await (await get("h", page)).json()).toEqual({ config: { periodSeconds: 3600 }, pingPath: `/hb/${PING_TOKEN}` });
-    expect(await (await get("api", page)).json()).toEqual({ config: { url: stored }, pingPath: null });
-    expect((await get("nope", page)).status).toBe(404);
+    expect((await ask("h", { cookie, origin: "https://elsewhere.example" })).status).toBe(403);
+    expect((await ask("h", { cookie, "sec-fetch-site": "cross-site" })).status).toBe(403);
+    // One read: the settings with the version Edit saves against.
+    const updatedAt = watch.store.check("h")!.updatedAt;
+    expect(await (await ask("h", page)).json()).toEqual({
+      intent: "Backup pings", cadenceSeconds: 300, kind: "heartbeat", updatedAt, config: { periodSeconds: 3600 }, pingPath: `/hb/${PING_TOKEN}`,
+    });
+    expect(await (await ask("api", page)).json()).toMatchObject({ kind: "http", config: { url: stored }, pingPath: null });
+    expect((await ask("nope", page)).status).toBe(404);
+    // A GET, which a page on plain HTTP sends without its Origin, is no way to them.
+    expect((await fetch(`${base}/api/checks/h/settings`, { headers: page })).status).not.toBe(200);
     // The state, which agents read too, carries neither.
     const state = await (await fetch(`${base}/api/state`, { headers: { authorization: "Bearer test-token-123" } })).text();
     expect(state).not.toMatch(new RegExp(`${PING_TOKEN}|open-sesame|key=abc`));
+  });
+
+  it("answers the agents' token with checks that carry no secrets", async () => {
+    const { base, watch } = await serve();
+    watch.defineCheck(
+      { id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      "on",
+    );
+    watch.defineCheck({ id: "api", serviceId: "s", kind: "http", intent: "API answers", config: { url: "https://monitor:open-sesame@api.example/v1?key=abc" }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on"); // gitleaks:allow
+    const act = (id: string, action: string) =>
+      fetch(`${base}/api/checks/${id}/${action}`, { method: "POST", headers: { authorization: "Bearer test-token-123", "content-type": "application/json" }, body: "{}" });
+    for (const [id, action] of [["h", "pause"], ["h", "resume"], ["api", "pause"], ["api", "on"]] as const) {
+      const answer = await act(id, action);
+      expect(answer.status).toBe(200);
+      expect(await answer.text()).not.toMatch(new RegExp(`${PING_TOKEN}|open-sesame|key=abc|/hb/`));
+    }
+    expect(((await (await act("api", "pause")).json()) as { check: { config: { url: string } } }).check.config.url).toBe("https://api.example/v1?…");
   });
 
   it("edits, deletes and restores checks for a browser on the page only", async () => {

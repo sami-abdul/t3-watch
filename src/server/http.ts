@@ -8,6 +8,7 @@ import type { WatchConfig } from "./config.ts";
 import { deleteCheck, editCheck, restoreCheck } from "./edits.ts";
 import { isLiveSignInCode, isSession, SESSION_DAYS, SIGN_IN_MINUTES, startSession, useSignInCode } from "./signin.ts";
 import { readState } from "./state.ts";
+import { publicCheck, storedSettings } from "./targets.ts";
 
 const MAX_BODY = 64 * 1024;
 /** A sign-in form holds one short code. */
@@ -238,7 +239,8 @@ export const makeHttpServer = (options: {
         checkAction[2] as CheckAction,
         typeof body.until === "string" ? body.until : undefined,
       );
-      sendJson(response, 200, { check });
+      // The token agents hold may ask for this, so the check comes back without its secrets.
+      sendJson(response, 200, { check: publicCheck(check) });
       return true;
     }
     const change = /^\/api\/checks\/([^/]+)\/(edit|delete|restore)$/.exec(path);
@@ -248,21 +250,19 @@ export const makeHttpServer = (options: {
       const id = decodeURIComponent(change[1]!);
       const check =
         change[2] === "edit" ? editCheck(watch, id, await readJson(request)) : change[2] === "delete" ? deleteCheck(watch, id) : restoreCheck(watch, id);
-      sendJson(response, 200, { check });
+      sendJson(response, 200, { check: publicCheck(check) });
       return true;
     }
     const settings = /^\/api\/checks\/([^/]+)\/settings$/.exec(path);
-    if (settings !== null && method === "GET") {
+    if (settings !== null && method === "POST") {
       // A check's settings as stored, and a heartbeat's ping address: the person sees them on the
-      // page; the state, the inline view and agents get them without secrets.
+      // page; the state, the inline view and agents get them without secrets. A POST, because a
+      // browser sends its Origin with one even on plain HTTP away from localhost, where it leaves
+      // out fetch metadata and a GET from the page would carry neither.
       requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "A check's stored settings show on the Watch page");
       const check = watch.store.check(decodeURIComponent(settings[1]!));
       if (check === null) throw new WatchError("No such check", 404);
-      const { token, ...rest } = check.config;
-      sendJson(response, 200, {
-        config: check.kind === "heartbeat" ? rest : check.config,
-        pingPath: check.kind === "heartbeat" && typeof token === "string" ? `/hb/${token}` : null,
-      });
+      sendJson(response, 200, storedSettings(check));
       return true;
     }
     const runs = /^\/api\/checks\/([^/]+)\/runs$/.exec(path);

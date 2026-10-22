@@ -3,6 +3,7 @@ import type { CheckAction } from "../server/app.ts";
 import type { Reads } from "../server/config.ts";
 import type { SetupSources } from "../server/scan.ts";
 import type { Run } from "../server/store.ts";
+import type { storedSettings } from "../server/targets.ts";
 import type { WatchState } from "../server/state.ts";
 
 export type { WatchState };
@@ -71,13 +72,8 @@ export interface WatchClient {
   readonly openPage: (() => void) | null;
 }
 
-/** What the page fetches for Edit and a heartbeat's ping address. */
-export interface CheckSettings {
-  /** As stored, with a heartbeat's ping token left out: it never changes in Edit. */
-  readonly config: Readonly<Record<string, unknown>>;
-  /** A heartbeat check's ping address, from the page's own origin; null for other kinds. */
-  readonly pingPath: string | null;
-}
+/** What the page fetches for Edit and a heartbeat's ping address, as the server builds it. */
+export type CheckSettings = ReturnType<typeof storedSettings>;
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const response = await fetch(path, {
@@ -110,7 +106,7 @@ export const httpClient: WatchClient = {
   deleteCheck: async (id) => {
     await post(`/api/checks/${encodeURIComponent(id)}/delete`);
   },
-  checkSettings: (id) => request<CheckSettings>(`/api/checks/${encodeURIComponent(id)}/settings`),
+  checkSettings: (id) => post<CheckSettings>(`/api/checks/${encodeURIComponent(id)}/settings`),
   restoreCheck: async (id) => {
     await post(`/api/checks/${encodeURIComponent(id)}/restore`);
   },

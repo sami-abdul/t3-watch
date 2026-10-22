@@ -3,10 +3,12 @@ import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
-import type { Check } from "./store.ts";
+import type { Check, VendorDraft } from "./store.ts";
 import { cadenceOf, publicConfig, targetsOf } from "./targets.ts";
 
-export interface CheckView extends Check {
+export interface CheckView extends Omit<Check, "config"> {
+  /** Its settings without secrets, from publicConfig; the page fetches them as stored for Edit. */
+  readonly config: Readonly<Record<string, unknown>>;
   readonly serviceLabel: string;
   readonly note: string | null;
   /** What the check contacts, in a sentence with no secret in it. */
@@ -34,6 +36,22 @@ export const withTargets = (
     return [{ ...s, intent: check.intent, state: check.state, target: target(check), cadence: cadenceOf(check.cadenceSeconds), keyId: check.keyId }];
   }),
 });
+
+/**
+ * A vendor draft as the person decides on it: its name, the API it reads and how its test went. The
+ * description itself stays out, since an agent may have written a key into its headers or queries.
+ */
+const vendorDraftView = (draft: VendorDraft) => {
+  const api = draft.description.api;
+  const origin = typeof api === "object" && api !== null && "origin" in api && typeof api.origin === "string" ? (URL.parse(api.origin)?.origin ?? null) : null;
+  return {
+    id: draft.id,
+    label: typeof draft.description.label === "string" ? draft.description.label : draft.id,
+    origin,
+    testSummary: draft.testSummary,
+    createdAt: draft.createdAt,
+  };
+};
 
 /**
  * Everything the page and the inline view show, in one read. Never contains a key value, nor a
@@ -66,7 +84,7 @@ export const readState = (watch: Watch) => {
     keys,
     events: watch.store.events(20),
     notes: notes.filter((n) => n.checkId === null).slice(0, 10),
-    vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft"),
+    vendorDrafts: watch.store.vendorDrafts().filter((d) => d.state === "draft").map(vendorDraftView),
     // The host only: the address belongs to the T3 task, and this state can render inside a chat.
     alerts: (() => {
       const a = alertSettings(watch);
@@ -131,6 +149,6 @@ export const homeText = (state: WatchState) => {
     );
   if (drafts.length > 0) lines.push("", "Drafts waiting for the person:", ...drafts.map(line));
   if (state.vendorDrafts.length > 0)
-    lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => String(d.description.label ?? d.id)).join(", ")}`);
+    lines.push("", `Vendor drafts waiting: ${state.vendorDrafts.map((d) => d.label).join(", ")}`);
   return lines.join("\n");
 };
