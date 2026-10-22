@@ -14,7 +14,10 @@ plain code on its own clock, so they spend no model tokens.
 - **The chat** is for understanding and authoring. A "Watch" thread in [T3 Code](https://t3.codes)
   (or any MCP client) investigates failures, writes new checks and shows the page inline.
 
-![Home in the demo: one check broken with the Watch thread's note on it, a check an agent wrote waiting to be turned on, and six products, the broken one first](docs/home.png)
+[![The demo in 60 seconds: one command starts it, Home leads with the broken check and the agent's note on it, a check the agent wrote gets turned on, the products open with their checks, and Details shows a key and a signed test alert](docs/demo.gif)](docs/demo.mp4)
+
+The demo in 60 seconds, recorded from `npx @lfg-labs/t3-watch demo` with its sample data. The
+[video](docs/demo.mp4) is sharper.
 
 ## Try it first
 
@@ -25,8 +28,8 @@ npx @lfg-labs/t3-watch demo
 With Node 24 or newer, the demo runs a Watch with sample checks on this machine and prints a
 sign-in link for its page. Every check and alert in it gets a canned answer, and it neither scans
 nor takes keys, so it reaches none of your accounts and sends nothing off the machine. Signing in
-to it leaves your own Watch signed in. Ctrl-C stops it and removes it. The screenshots here come
-from it.
+to it leaves your own Watch signed in. Ctrl-C stops it and removes it. The video and the
+screenshots here come from it.
 
 | Each product with its checks | Editing a check in Details |
 | --- | --- |
@@ -156,6 +159,7 @@ pnpm dev          # the service from source, on 127.0.0.1:8460
 pnpm test         # unit and integration tests
 pnpm typecheck
 pnpm build        # server, page and the inline view
+node scripts/record-demo.ts   # the README's demo video again, with Chrome and ffmpeg
 ```
 
 Design and requirements live in [`openspec/`](openspec).
