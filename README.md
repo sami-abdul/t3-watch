@@ -16,8 +16,8 @@ plain code on its own clock, so they spend no model tokens.
 
 [![The demo in 60 seconds: one command starts it, Home leads with the broken check and the agent's note on it, a check the agent wrote gets turned on, the products open with their checks, and Details shows a key and a signed test alert](docs/demo.gif)](docs/demo.mp4)
 
-The demo in 60 seconds, recorded from `npx @lfg-labs/t3-watch demo` with its sample data. The
-[video](docs/demo.mp4) is sharper.
+The demo in 60 seconds, recorded from `npx @lfg-labs/t3-watch demo` with its sample data. Click it
+for the sharper [MP4](docs/demo.mp4), which GitHub hands over as a download.
 
 ## Try it first
 
