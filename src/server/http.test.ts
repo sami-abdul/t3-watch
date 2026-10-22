@@ -144,6 +144,30 @@ describe("http", () => {
     expect(await (await fetch(`${base}/signin?code=spent`)).text()).toContain("Stop the demo and start it again for a new link.");
   });
 
+  it("gives a check's stored settings and ping address to a browser on the page only", async () => {
+    const { base, watch } = await serve();
+    const stored = "https://monitor:open-sesame@api.example/v1?key=abc"; // gitleaks:allow
+    watch.defineCheck(
+      { id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token: PING_TOKEN, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "agent" },
+      "on",
+    );
+    watch.defineCheck({ id: "api", serviceId: "s", kind: "http", intent: "API answers", config: { url: stored }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    const cookie = `t3w=${startSession(watch.store, watch.deps.now())}`;
+    const page = { cookie, "sec-fetch-site": "same-origin" };
+    const get = (id: string, headers: Record<string, string>) => fetch(`${base}/api/checks/${id}/settings`, { headers });
+    // Neither the token agents hold nor a page on another site may read them.
+    const agent = await get("h", { authorization: "Bearer test-token-123" });
+    expect(agent.status).toBe(403);
+    expect(((await agent.json()) as { error: string }).error).toBe("A check's stored settings show on the Watch page");
+    expect((await get("h", { cookie, "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect(await (await get("h", page)).json()).toEqual({ config: { periodSeconds: 3600 }, pingPath: `/hb/${PING_TOKEN}` });
+    expect(await (await get("api", page)).json()).toEqual({ config: { url: stored }, pingPath: null });
+    expect((await get("nope", page)).status).toBe(404);
+    // The state, which agents read too, carries neither.
+    const state = await (await fetch(`${base}/api/state`, { headers: { authorization: "Bearer test-token-123" } })).text();
+    expect(state).not.toMatch(new RegExp(`${PING_TOKEN}|open-sesame|key=abc`));
+  });
+
   it("edits, deletes and restores checks for a browser on the page only", async () => {
     const { base, watch } = await serve();
     watch.defineCheck(

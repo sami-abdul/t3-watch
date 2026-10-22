@@ -360,13 +360,17 @@ export interface EditForm {
  */
 const SETTINGS_KINDS: ReadonlyArray<CheckKind> = ["http", "github", "aws_metric", "heartbeat"];
 
-/** The form as a check stands, with a heartbeat's ping token left out: it never changes here. */
-export const editFormOf = (check: Pick<CheckView, "intent" | "cadenceSeconds" | "kind" | "config" | "updatedAt">): EditForm => {
-  const { token: _, ...rest } = check.config as Record<string, unknown>;
+/**
+ * The form as a check stands, with its settings as stored, which the page fetches since the state
+ * carries them without secrets, and a heartbeat's ping token left out: it never changes here. The
+ * check's own `updatedAt` goes with the form, so Watch refuses it if the check changed meanwhile.
+ */
+export const editFormOf = (check: Pick<CheckView, "intent" | "cadenceSeconds" | "kind" | "updatedAt">, config: Readonly<Record<string, unknown>>): EditForm => {
+  const { token: _, ...rest } = config;
   return {
     intent: check.intent,
     minutes: String(check.cadenceSeconds / 60),
-    settings: SETTINGS_KINDS.includes(check.kind) ? JSON.stringify(check.kind === "heartbeat" ? rest : check.config, null, 2) : null,
+    settings: SETTINGS_KINDS.includes(check.kind) ? JSON.stringify(check.kind === "heartbeat" ? rest : config, null, 2) : null,
     updatedAt: check.updatedAt,
   };
 };

@@ -53,6 +53,20 @@ const shownUrl = (value: string | null) => {
 
 const short = (value: string, max = 40) => (value.length <= max ? value : `${value.slice(0, max - 1)}…`);
 
+/**
+ * A check's settings with no secret in them, for the state the page and the inline view read and
+ * for agents: a heartbeat's ping token left out, and an HTTP address shown as the target sentence
+ * shows it. The page fetches the settings as stored when the person edits a check.
+ */
+export const publicConfig = (check: Pick<Check, "kind" | "config">): Readonly<Record<string, unknown>> => {
+  if (check.kind === "heartbeat") {
+    const { token: _, ...rest } = check.config;
+    return rest;
+  }
+  if (check.kind === "http" && typeof check.config.url === "string") return { ...check.config, url: shownUrl(check.config.url) };
+  return check.config;
+};
+
 export const checkTarget = (
   check: Pick<Check, "kind" | "config">,
   context: { readonly vendor: (id: string) => Vendor | undefined; readonly keyLast4: string | null },

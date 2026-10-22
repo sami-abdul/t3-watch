@@ -40,7 +40,7 @@ const scan: Scan = {
 const check = (over: Partial<CheckView>): CheckView => ({
   id: "c", serviceId: "s", kind: "http", intent: "i", config: {}, keyId: null, cadenceSeconds: 60, state: "on", pending: null,
   snoozedUntil: null, nextRunAt: null, origin: "scan", lastOutcome: "pass", lastSummary: null, lastRunAt: null,
-  createdAt: "", updatedAt: "", serviceLabel: "S", note: null, pingPath: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
+  createdAt: "", updatedAt: "", serviceLabel: "S", note: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
 });
 const state = (over: Partial<WatchState>): WatchState => ({
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
@@ -289,22 +289,25 @@ describe("Edit and Delete", () => {
     ]);
   });
 
-  it("start from the check as it stands, with a heartbeat's token and a vendor check's settings left out", () => {
-    const site = check({ intent: "Site answers", cadenceSeconds: 900, kind: "http", config: { url: "https://shop.example/", contains: "Welcome" }, updatedAt: "2026-10-15T09:00:00Z" });
-    expect(editFormOf(site)).toEqual({
+  it("start from the check as it stands and its settings as stored, with a heartbeat's token and a vendor check's settings left out", () => {
+    // The state carries the address without its secrets; Edit starts from it as stored, so saving
+    // it unchanged keeps them.
+    const stored = { url: "https://monitor:open-sesame@shop.example/?key=abc", contains: "Welcome" }; // gitleaks:allow
+    const site = check({ intent: "Site answers", cadenceSeconds: 900, kind: "http", config: { url: "https://shop.example/?…", contains: "Welcome" }, updatedAt: "2026-10-15T09:00:00Z" });
+    expect(editFormOf(site, stored)).toEqual({
       intent: "Site answers",
       minutes: "15",
-      settings: '{\n  "url": "https://shop.example/",\n  "contains": "Welcome"\n}',
+      settings: JSON.stringify(stored, null, 2),
       updatedAt: "2026-10-15T09:00:00Z",
     });
     // A cadence that is not whole minutes shows as it is, and goes back unchanged.
-    expect(editFormOf(check({ cadenceSeconds: 90 })).minutes).toBe("1.5");
-    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300, config: { token: PING_TOKEN, periodSeconds: 3600 } }));
+    expect(editFormOf(check({ cadenceSeconds: 90 }), {}).minutes).toBe("1.5");
+    const ping = editFormOf(check({ kind: "heartbeat", cadenceSeconds: 300 }), { token: PING_TOKEN, periodSeconds: 3600 });
     expect(ping.settings).not.toContain(PING_TOKEN);
     expect(JSON.parse(ping.settings!)).toEqual({ periodSeconds: 3600 });
-    expect(editFormOf(check({ kind: "vendor", config: { vendor: "stripe", check: "key" } })).settings).toBeNull();
+    expect(editFormOf(check({ kind: "vendor" }), { vendor: "stripe", check: "key" }).settings).toBeNull();
     // A kind from another build of Watch keeps its settings out of the form, so a rename still saves.
-    expect(editFormOf(check({ kind: "dns" as never, config: { name: "shop.example" } })).settings).toBeNull();
+    expect(editFormOf(check({ kind: "dns" as never }), { name: "shop.example" }).settings).toBeNull();
   });
 
   it("send what was typed, and stop only at settings that are not JSON", () => {

@@ -53,6 +53,24 @@ describe("mcp", () => {
     expect(resource.contents[0]!.mimeType).toBe("text/html;profile=mcp-app");
   });
 
+  it("hands agents check settings without secrets, in the view's state and in watch_check", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const token = "hb-agent-test-token-0123456789"; // gitleaks:allow
+    watch.defineCheck({ id: "api", serviceId: "s", kind: "http", intent: "API answers", config: { url: "https://monitor:open-sesame@api.example/v1?key=abc" }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on"); // gitleaks:allow
+    watch.defineCheck({ id: "h", serviceId: "s", kind: "heartbeat", intent: "Backup pings", config: { token, periodSeconds: 3600 }, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    const { client } = await connect(watch);
+    // watch_state is the inline view's, but a client that does not know views lists it like any tool.
+    const results = [
+      await client.callTool({ name: "watch_state", arguments: {} }),
+      await client.callTool({ name: "watch_home", arguments: {} }),
+      await client.callTool({ name: "watch_check", arguments: { checkId: "api" } }),
+      await client.callTool({ name: "watch_check", arguments: { checkId: "h" } }),
+    ];
+    for (const result of results) expect(JSON.stringify(result)).not.toMatch(new RegExp(`${token}|open-sesame|key=abc|/hb/`));
+    expect(JSON.stringify(results[0])).toContain("https://api.example/v1?…");
+    expect(JSON.stringify(results[2])).toContain("https://api.example/v1?…");
+  });
+
   it("serves the inline view with its own version written in, as the server reports it", async () => {
     const root = mkdtempSync(join(tmpdir(), "t3w-view-"));
     try {

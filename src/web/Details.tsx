@@ -42,15 +42,18 @@ function Runs({ client, check }: { readonly client: WatchClient; readonly check:
 /** Edit for one check: its name, how often it runs and its settings. Watch says what it refuses. */
 function EditPanel({
   check,
+  config,
   onSave,
   onCancel,
 }: {
   readonly check: CheckView;
+  /** The check's settings as stored, fetched when Edit was pressed. */
+  readonly config: Readonly<Record<string, unknown>>;
   readonly onSave: (edit: CheckEditInput) => Promise<void>;
   readonly onCancel: () => void;
 }) {
   // Taken once, so a refresh while the person types leaves what they typed.
-  const [form, setForm] = useState<EditForm>(() => editFormOf(check));
+  const [form, setForm] = useState<EditForm>(() => editFormOf(check, config));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const save = async () => {
@@ -170,10 +173,13 @@ export function Details({
       refresh();
     }
   };
-  // One check at a time is edited, or asked about before it is deleted.
-  const [editing, setEditing] = useState<string | null>(null);
+  // One check at a time is edited, from its settings as stored, or asked about before it is deleted.
+  const [editing, setEditing] = useState<{ readonly id: string; readonly config: Readonly<Record<string, unknown>> } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const editingCheck = editing === null || client.editCheck === null ? null : (state.checks.find((c) => c.id === editing && canEdit(c)) ?? null);
+  // Heartbeat ping addresses the person asked to see, which the state leaves out.
+  const [pings, setPings] = useState<Readonly<Record<string, string>>>({});
+  const editingCheck =
+    editing === null || client.editCheck === null ? null : (state.checks.find((c) => c.id === editing.id && canEdit(c)) ?? null);
   // A check deleted or turned into something else meanwhile closes its form, or its question.
   const deletable = deleting !== null && state.checks.some((c) => c.id === deleting && canDelete(c));
   useEffect(() => {
@@ -223,14 +229,30 @@ export function Details({
         <Button size="compact" variant="ghost" onClick={() => act(() => client.setCheck(check.id, "run"))}>
           Run now
         </Button>
-        {client.editCheck !== null && canEdit(check) ? (
+        {check.kind === "heartbeat" && client.checkSettings !== null && pings[check.id] === undefined ? (
           <Button
             size="compact"
             variant="ghost"
-            onClick={() => {
-              setDeleting(null);
-              setEditing(check.id);
-            }}
+            onClick={() =>
+              act(async () => {
+                const { pingPath } = await client.checkSettings!(check.id);
+                if (pingPath !== null) setPings((shown) => ({ ...shown, [check.id]: pingPath }));
+              })
+            }
+          >
+            Ping address
+          </Button>
+        ) : null}
+        {client.editCheck !== null && client.checkSettings !== null && canEdit(check) ? (
+          <Button
+            size="compact"
+            variant="ghost"
+            onClick={() =>
+              act(async () => {
+                setDeleting(null);
+                setEditing({ id: check.id, config: (await client.checkSettings!(check.id)).config });
+              })
+            }
           >
             Edit
           </Button>
@@ -262,6 +284,7 @@ export function Details({
           <EditPanel
             key={editingCheck.id}
             check={editingCheck}
+            config={editing!.config}
             onCancel={() => setEditing(null)}
             onSave={async (edit) => {
               await client.editCheck!(editingCheck.id, edit);
@@ -286,7 +309,13 @@ export function Details({
                         check.target,
                         check.cadence,
                         check.lastSummary === null ? "Not run yet" : `${check.lastSummary} · ${ago(check.lastRunAt, now)}`,
-                        check.pingPath === null ? null : `Ping ${location.origin}${check.pingPath} from the job (add ?status=fail on failure)`,
+                        check.kind !== "heartbeat"
+                          ? null
+                          : pings[check.id] !== undefined
+                            ? `Ping ${location.origin}${pings[check.id]} from the job (add ?status=fail on failure)`
+                            : client.checkSettings === null
+                              ? "Its ping address shows on the Watch page"
+                              : null,
                       ),
                 badge: stateTone[check.state] ?? null,
                 action: actions(check),

@@ -251,6 +251,20 @@ export const makeHttpServer = (options: {
       sendJson(response, 200, { check });
       return true;
     }
+    const settings = /^\/api\/checks\/([^/]+)\/settings$/.exec(path);
+    if (settings !== null && method === "GET") {
+      // A check's settings as stored, and a heartbeat's ping address: the person sees them on the
+      // page; the state, the inline view and agents get them without secrets.
+      requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "A check's stored settings show on the Watch page");
+      const check = watch.store.check(decodeURIComponent(settings[1]!));
+      if (check === null) throw new WatchError("No such check", 404);
+      const { token, ...rest } = check.config;
+      sendJson(response, 200, {
+        config: check.kind === "heartbeat" ? rest : check.config,
+        pingPath: check.kind === "heartbeat" && typeof token === "string" ? `/hb/${token}` : null,
+      });
+      return true;
+    }
     const runs = /^\/api\/checks\/([^/]+)\/runs$/.exec(path);
     if (runs !== null && method === "GET") {
       sendJson(response, 200, { runs: watch.store.runs(decodeURIComponent(runs[1]!), 20) });

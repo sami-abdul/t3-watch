@@ -16,6 +16,7 @@ import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "
 import { readSources } from "./scan.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import { homeText, readState, withTargets } from "./state.ts";
+import { publicConfig } from "./targets.ts";
 import { packageVersion } from "./version.ts";
 import { VERSION_MARK } from "./version-mark.ts";
 
@@ -124,10 +125,9 @@ export const makeMcpServer = (
     safely(async ({ checkId }: { checkId: string }) => {
       const check = watch.store.check(checkId);
       if (check === null) throw new Error(`No check ${checkId}. watch_status lists them.`);
-      const { token: _, ...config } = check.config as Record<string, unknown>;
       return text(
         json({
-          check: { ...check, config },
+          check: { ...check, config: publicConfig(check) },
           service: watch.store.service(check.serviceId),
           runs: watch.store.runs(checkId, 10),
           notes: watch.store.notes(200).filter((n) => n.checkId === checkId).slice(0, 5),

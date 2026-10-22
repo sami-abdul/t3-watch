@@ -49,6 +49,11 @@ export interface WatchClient {
   readonly deleteCheck: ((id: string) => Promise<void>) | null;
   /** Brings a deleted check back, paused. Null in a chat. */
   readonly restoreCheck: ((id: string) => Promise<void>) | null;
+  /**
+   * A check's settings as stored, and a heartbeat's ping address, which the state leaves out. Null
+   * in a chat, where they would reach the agent: the person sees them on the page.
+   */
+  readonly checkSettings: ((id: string) => Promise<CheckSettings>) | null;
   readonly runs: (id: string) => Promise<ReadonlyArray<Run>>;
   readonly draft: (id: string, action: "approve" | "discard", kind: "check" | "vendor") => Promise<void>;
   /** Null where keys cannot be pasted, such as inside a chat: there `openPage` is used. */
@@ -64,6 +69,14 @@ export interface WatchClient {
   /** Hands a question to the Watch thread. Returns what the person should know. */
   readonly ask: (text: string) => Promise<string>;
   readonly openPage: (() => void) | null;
+}
+
+/** What the page fetches for Edit and a heartbeat's ping address. */
+export interface CheckSettings {
+  /** As stored, with a heartbeat's ping token left out: it never changes in Edit. */
+  readonly config: Readonly<Record<string, unknown>>;
+  /** A heartbeat check's ping address, from the page's own origin; null for other kinds. */
+  readonly pingPath: string | null;
 }
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -97,6 +110,7 @@ export const httpClient: WatchClient = {
   deleteCheck: async (id) => {
     await post(`/api/checks/${encodeURIComponent(id)}/delete`);
   },
+  checkSettings: (id) => request<CheckSettings>(`/api/checks/${encodeURIComponent(id)}/settings`),
   restoreCheck: async (id) => {
     await post(`/api/checks/${encodeURIComponent(id)}/restore`);
   },

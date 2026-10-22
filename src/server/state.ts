@@ -4,13 +4,11 @@ import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "./notices.ts";
 import { pendingText } from "./pending.ts";
 import type { Check } from "./store.ts";
-import { cadenceOf, targetsOf } from "./targets.ts";
+import { cadenceOf, publicConfig, targetsOf } from "./targets.ts";
 
 export interface CheckView extends Check {
   readonly serviceLabel: string;
   readonly note: string | null;
-  /** Ping URL path for heartbeat checks. */
-  readonly pingPath: string | null;
   /** What the check contacts, in a sentence with no secret in it. */
   readonly target: string;
   /** How often it runs, in words. */
@@ -37,7 +35,10 @@ export const withTargets = (
   }),
 });
 
-/** Everything the page and the inline view show, in one read. Never contains a key value. */
+/**
+ * Everything the page and the inline view show, in one read. Never contains a key value, nor a
+ * secret in a check's settings: those, and a heartbeat's ping address, the page fetches on its own.
+ */
 export const readState = (watch: Watch) => {
   const services = watch.store.services();
   const labels = new Map(services.map((s) => [s.id, s.label]));
@@ -52,12 +53,9 @@ export const readState = (watch: Watch) => {
   const target = targetsOf(watch, keys, vendors);
   const checks: Array<CheckView> = stored.map((check) => ({
     ...check,
+    config: publicConfig(check),
     serviceLabel: labels.get(check.serviceId) ?? check.serviceId,
     note: latestNote.get(check.id) ?? null,
-    pingPath:
-      check.kind === "heartbeat" && typeof check.config.token === "string"
-        ? `/hb/${check.config.token}`
-        : null,
     target: target(check),
     cadence: cadenceOf(check.cadenceSeconds),
   }));

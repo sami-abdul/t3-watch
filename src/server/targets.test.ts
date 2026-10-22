@@ -56,6 +56,24 @@ describe("check targets", () => {
     expect(span(150)).toBe("150 s");
   });
 
+  it("carries each check's settings into the state with no secret in them", () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const stored = "https://user:hunter2@api.example/v1/status?key=abc"; // gitleaks:allow
+    const define = (id: string, kind: string, config: Record<string, unknown>) =>
+      watch.defineCheck({ id, serviceId: "s", kind: kind as never, intent: id, config, keyId: null, cadenceSeconds: 300, origin: "user" }, "on");
+    define("api", "http", { url: stored, contains: "ok" });
+    define("hb", "heartbeat", { token: "hb-secret-token-0123456789", periodSeconds: 3600 });
+    define("ci", "github", { repo: "acme/api", branch: "main" });
+    const state = readState(watch);
+    const config = (id: string) => state.checks.find((c) => c.id === id)!.config;
+    expect(config("api")).toEqual({ url: "https://api.example/v1/status?…", contains: "ok" });
+    expect(config("hb")).toEqual({ periodSeconds: 3600 });
+    expect(config("ci")).toEqual({ repo: "acme/api", branch: "main" });
+    // Nowhere in the state, a ping address included, and the stored settings stay as they were.
+    expect(JSON.stringify(state)).not.toMatch(/hunter2|key=abc|hb-secret-token|\/hb\//);
+    expect(watch.store.check("api")!.config.url).toBe(stored);
+  });
+
   it("reaches the state for every check and every suggestion, with its cadence", () => {
     const watch = testWatch(fakeDeps({}).deps);
     watch.defineCheck({ id: "site", serviceId: "s", kind: "http", intent: "Site answers", config: { url: "https://x.test/" }, keyId: null, cadenceSeconds: 900, origin: "scan" }, "proposed");
