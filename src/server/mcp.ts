@@ -16,6 +16,8 @@ import { addNote, decideDraft, DraftCheckInput, draftCheck, draftVendor } from "
 import { readSources } from "./scan.ts";
 import { makeSignInCode, SIGN_IN_MINUTES, signInLink } from "./signin.ts";
 import { homeText, readState, withTargets } from "./state.ts";
+import { packageVersion } from "./version.ts";
+import { VERSION_MARK } from "./version-mark.ts";
 
 export const HOME_URI = "ui://t3-watch/home";
 
@@ -55,21 +57,11 @@ const safely =
     }
   };
 
-/** The app view's HTML, built by `pnpm build:app`. */
-/** The package's own version, so the server never reports one release while running another. */
-const packageVersion = (root: string) => {
-  try {
-    const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: unknown }).version;
-    return typeof version === "string" ? version : "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-};
-
+/** The app view's HTML, built by `pnpm build:app`, carrying the server's own version. */
 const appHtml = (root: string) => {
   const file = join(root, "dist", "app", "app.html");
   return existsSync(file)
-    ? readFileSync(file, "utf8")
+    ? readFileSync(file, "utf8").replaceAll(VERSION_MARK, packageVersion(root))
     : "<!doctype html><p>The Watch view is not built. Run pnpm build.</p>";
 };
 

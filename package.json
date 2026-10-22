@@ -1,7 +1,8 @@
 {
   "name": "@lfg-labs/t3-watch",
-  "version": "0.3.0",
-  "description": "Watches the systems you run, sets itself up from your projects, and talks to your agents over MCP.",
+  "version": "0.4.0",
+  "description": "Monitoring that sets itself up from the projects on your machine, and wakes your coding agent only when something changes.",
+  "mcpName": "ai.lfglabs/t3-watch",
   "license": "MIT",
   "author": "Abdul Sami",
   "repository": {

@@ -8,11 +8,13 @@ import { createRoot } from "react-dom/client";
 
 import type { AlertResult } from "../server/alerts.ts";
 import type { Run } from "../server/store.ts";
+import { VERSION_MARK } from "../server/version-mark.ts";
 import { App } from "./App.tsx";
 import type { SetupView, WatchClient, WatchState } from "./client.ts";
 import "./index.css";
 
-const app = new McpApp({ name: "t3-watch", version: "0.3.0" });
+// The server writes its own version over the mark as it serves this view.
+const app = new McpApp({ name: "t3-watch", version: VERSION_MARK });
 let pageUrl: string | null = null;
 
 const call = async (name: string, args: Record<string, unknown> = {}) => {

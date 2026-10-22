@@ -3,3 +3,6 @@ dist/
 .t3-watch/
 *.log
 *.tgz
+# Signing keys, and the MCP Registry publisher's token files, never belong in the repository.
+*.pem
+.mcpregistry_*

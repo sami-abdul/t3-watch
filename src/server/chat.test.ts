@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { alertSettings, deliverAlerts, lastAlertDelivery, lastAlertTest, makeAlertSecret, sendTestAlert, setAlerts } from "./alerts.ts";
 import { makeWatch, type Watch } from "./app.ts";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,7 @@ import { extendServer } from "./extend.ts";
 import { makeHttpServer } from "./http.ts";
 import { startSession } from "./signin.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
+import { VERSION_MARK } from "./version-mark.ts";
 
 // A made-up test secret, so the secret scanner may skip it.
 const SIGNING_SECRET = "a-signing-secret-1234"; // gitleaks:allow
@@ -24,8 +25,8 @@ afterEach(() => {
   for (const close of closers.splice(0)) close();
 });
 
-const connect = async (watch: Watch) => {
-  const extension = extendServer({ watch, config: () => config, reloadConfig: () => config, home: "/nonexistent", root: process.cwd() });
+const connect = async (watch: Watch, root = process.cwd()) => {
+  const extension = extendServer({ watch, config: () => config, reloadConfig: () => config, home: "/nonexistent", root });
   const server = makeHttpServer({ watch, config: () => config, webDir: "/nonexistent", extraRoutes: extension.routes });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   closers.push(() => server.close());
@@ -50,6 +51,24 @@ describe("mcp", () => {
     expect((byName.get("watch_home")!._meta as { ui: { resourceUri: string } }).ui.resourceUri).toBe("ui://t3-watch/home");
     const resource = await client.readResource({ uri: "ui://t3-watch/home" });
     expect(resource.contents[0]!.mimeType).toBe("text/html;profile=mcp-app");
+  });
+
+  it("serves the inline view with its own version written in, as the server reports it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "t3w-view-"));
+    try {
+      mkdirSync(join(root, "dist", "app"), { recursive: true });
+      writeFileSync(join(root, "package.json"), JSON.stringify({ version: "9.8.7" }));
+      // As the build leaves it: the mark where the version goes.
+      writeFileSync(join(root, "dist", "app", "app.html"), `<script>new App({name:"t3-watch",version:\`${VERSION_MARK}\`})</script>`);
+      const { client } = await connect(testWatch(fakeDeps({}).deps), root);
+      const [view] = (await client.readResource({ uri: "ui://t3-watch/home" })).contents;
+      const text = view !== undefined && "text" in view ? view.text : "";
+      expect(text).toContain("version:`9.8.7`");
+      expect(text).not.toContain(VERSION_MARK);
+      expect(client.getServerVersion()?.version).toBe("9.8.7");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("puts Home's summary in the structured content too", async () => {

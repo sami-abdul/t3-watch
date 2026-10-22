@@ -1,8 +1,11 @@
 # t3-watch
 
+An agent on call for the things nobody watches. Checks run free; your agent wakes only when
+something changes.
+
 Watch keeps an eye on the systems you run: CI, cloud accounts, API keys, URLs and scheduled jobs.
-It sets itself up from the projects and logins already on your machine, runs its checks on its
-own clock without spending model tokens, and wakes your agent only when something changes.
+It sets itself up from the projects and logins already on your machine, and runs its checks as
+plain code on its own clock, so they spend no model tokens.
 
 - **The page** is for knowing and deciding: what's broken, what's waiting for you, and one-click
   Turn on, Pause and Add key. Keys are pasted here, never in chat. Details edits a check's name,
@@ -156,3 +159,7 @@ pnpm build        # server, page and the inline view
 ```
 
 Design and requirements live in [`openspec/`](openspec).
+
+## License
+
+Free and open source under the [MIT license](LICENSE).
