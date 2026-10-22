@@ -12,6 +12,10 @@
 - [x] 2.1 Tests, typecheck, build and `openspec validate fix-actions-billing-block --strict`.
 - [x] 2.2 Review rounds at high effort, with each finding fixed or declined with a reason. Three
       rounds found 11, 9 and 10: 28 fixed, 1 fixed in part and 1 declined.
-- [ ] 2.3 Against the real blocked run with the real gh, then live: the Watch restarts briefly with
+- [x] 2.3 Against the real blocked run with the real gh, then live: the Watch restarts briefly with
       its alert settings intact and its checks passing, and the blocked repository's check reads
-      "GitHub didn't run CI: Actions is blocked on billing".
+      "GitHub didn't run CI: Actions is blocked on billing". The real gh read the run's jobs and
+      annotation once, then only the list of runs. Live from 02:44 UTC on 22 October after a
+      restart of about a second, with signed alerts intact; at 02:54 UTC the check read so, under
+      Could not run, with the other 21 passing, and its one change, from failed, was accepted by
+      the webhook.
