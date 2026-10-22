@@ -14,4 +14,10 @@
 - [x] 2.2 Review rounds at high effort, with each finding fixed or declined with a reason. Three
       rounds found 9, 9 and 8, and the round 2 fixes' tests found 1 more: 13 fixed and 14 declined
       in `.wattson/decisions.md`.
-- [ ] 2.3 The live Watch restarts briefly with its alert settings intact and 21 of 22 checks passing.
+- [x] 2.3 The live Watch restarts briefly with its alert settings intact and 21 of 22 checks passing.
+      It answered 0.4 s after the restart at 16:24 UTC on 22 October, and signed alerts kept
+      delivering. GitHub's dips went on, so 19 of 22 passed: of the four CI checks HQ had snoozed
+      during them and the worker resumed on the new code, two held an empty list on their first run
+      and again at 16:40 with no change event, one kept passing, and one listed its runs and sent a
+      recovery alert, as the old code had left it at "No finished runs yet". A fifth repository's
+      pending dip cleared. Asked directly at 16:41, GitHub listed the runs of all four.
