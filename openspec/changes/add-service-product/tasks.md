@@ -16,4 +16,6 @@
 - [x] 2.3 On the live Watch: the database gains the column on restart, with signed alerts intact and
       21 of 22 checks passing, and Home's products are as they were. It answered 0.5 s after the
       restart onto the reviewed change, with 22 checks in the same 14 products and nothing named.
-- [ ] 2.4 Release 0.5.0 to npm, `package.json` and `server.json`, and move the MCP Registry entry to it.
+- [x] 2.4 Release 0.5.0 to npm, `package.json` and `server.json`, and move the MCP Registry entry to it.
+      Published on 22 October; installed from npm into an empty folder, its demo ran and stopped
+      cleanly, and at 13:13 UTC the registry's search showed `ai.lfglabs/t3-watch` 0.5.0 as latest.
