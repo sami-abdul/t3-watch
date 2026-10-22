@@ -32,6 +32,13 @@
       ping address until Ping address is pressed, then shows it; Edit opens from the stored
       settings. Tests cover a stored password surviving Edit, the route refusing the agents' token,
       and `watch_state`, `watch_home` and `watch_check` carrying no secret.
-- [ ] 3.4 Release 0.4.1 to npm, `package.json` and `server.json`, and check it from the registry.
+- [x] 3.4 Release 0.4.1 to npm, `package.json` and `server.json`, and check it from the registry.
+      Published on 22 October with `mcpName` `ai.lfglabs/t3-watch`; installed from npm into an empty
+      folder, its demo ran and stopped cleanly.
 - [ ] 3.5 Move the MCP Registry entry to 0.4.1 and confirm it in the registry's search; restart the
-      live Watch briefly with signed alerts intact and 21 of 22 checks passing.
+      live Watch briefly with signed alerts intact and 21 of 22 checks passing. Published at about
+      08:57 UTC on 22 October, which `mcp-publisher` confirmed as `ai.lfglabs/t3-watch` 0.4.1; the
+      live Watch answered 0.4 s after its restart with signed alerts intact and 21 of 22 passing,
+      and its page's Edit and ping address work. Still to confirm in the search: the registry's
+      read endpoints timed out for at least 15 minutes after the publish while its health check
+      answered.
