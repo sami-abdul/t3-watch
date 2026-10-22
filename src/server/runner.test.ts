@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { eventPayload } from "./alerts.ts";
 import { makeWatch } from "./app.ts";
 import { homeText, readState } from "./state.ts";
 import type { ChangeEvent } from "./store.ts";
@@ -823,5 +824,75 @@ describe("runner while Watch's link is slow", () => {
     await watch.runner.tick();
     expect(watch.store.check("site")!.lastSummary).toBe("Answered 503");
     expect(watch.store.runs("site")[0]!.summary).toMatch(/^Held while Watch's connection was slow/);
+  });
+});
+
+describe("runner when GitHub Actions is blocked on billing", () => {
+  it("alerts once for a repository, not on every push, and again when CI runs", async () => {
+    const BLOCKED = "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings";
+    // Each push adds a run: the first passes, the next two GitHub refuses to start, the last passes.
+    const pushes: Array<{ id: number; ran: boolean }> = [{ id: 100, ran: true }];
+    // Runs whose jobs GitHub fails to list for a moment.
+    const flaky = new Set<number>();
+    const fake = fakeDeps({
+      commands: {
+        gh: (args) => {
+          if (args[0] === "run")
+            return {
+              stdout: JSON.stringify(
+                pushes.toReversed().map((push) => ({
+                  status: "completed",
+                  conclusion: push.ran ? "success" : "failure",
+                  workflowName: "CI",
+                  displayTitle: `push ${push.id}`,
+                  url: `https://github.com/acme/api/actions/runs/${push.id}`,
+                  createdAt: "2026-10-22T01:22:35Z",
+                  databaseId: push.id,
+                })),
+              ),
+            };
+          const job = /actions\/runs\/(\d+)\/jobs\?per_page=100&page=1$/.exec(args[1] ?? "");
+          if (job !== null && flaky.has(Number(job[1]))) return { code: 1, stderr: "gh: HTTP 502: Bad Gateway" };
+          if (job !== null) return { stdout: JSON.stringify({ jobs: [{ id: Number(job[1]) * 10, conclusion: "failure", steps: [] }] }) };
+          if (/check-runs\/\d+\/annotations$/.test(args[1] ?? "")) return { stdout: JSON.stringify([{ annotation_level: "failure", message: BLOCKED }]) };
+          return { code: 1, stderr: "unexpected" };
+        },
+      },
+    });
+    const watch = testWatch(fake.deps);
+    watch.upsertService({ id: "github:acme/api", vendor: "github", label: "acme/api", target: "acme/api", reachable: true, note: null, foundIn: [] });
+    watch.defineCheck(
+      { id: "ci", serviceId: "github:acme/api", kind: "github", intent: "CI on main is passing", config: { repo: "acme/api", branch: "main" }, keyId: null, cadenceSeconds: 300, origin: "scan" },
+      "on",
+    );
+    const changes = () => watch.store.events().map((e) => `${e.from} -> ${e.to}`).toReversed();
+    await watch.runner.tick();
+    pushes.push({ id: 101, ran: false });
+    fake.advance(301);
+    await watch.runner.tick();
+    fake.advance(61);
+    await watch.runner.tick();
+    expect(changes()).toEqual(["pass -> unknown"]);
+    expect(eventPayload(watch, watch.store.events()[0]!, "https://watch.example").text).toBe(
+      "Watch check could not run: acme/api: CI on main is passing. GitHub didn't run CI: Actions is blocked on billing",
+    );
+    // Listed with what could not run, not with what is broken.
+    expect(homeText(readState(watch))).toContain("Could not run:\n- acme/api: CI on main is passing (ci): GitHub didn't run CI: Actions is blocked on billing");
+    // Another push, blocked too: nothing new to say, even while GitHub's answer about it cannot be read.
+    pushes.push({ id: 102, ran: false });
+    flaky.add(102);
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.lastSummary).toBe("Could not tell whether GitHub ran CI: gh: HTTP 502: Bad Gateway");
+    flaky.clear();
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(watch.store.check("ci")!.lastSummary).toBe("GitHub didn't run CI: Actions is blocked on billing");
+    expect(changes()).toEqual(["pass -> unknown"]);
+    // CI runs again and passes: that is news.
+    pushes.push({ id: 103, ran: true });
+    fake.advance(301);
+    await watch.runner.tick();
+    expect(changes()).toEqual(["pass -> unknown", "unknown -> pass"]);
   });
 });
