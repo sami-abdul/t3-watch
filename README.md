@@ -154,6 +154,15 @@ staying green),
 `aws_metric` (through the AWS CLI) and `heartbeat` (a job pings a URL; add `?status=fail` when it
 fails).
 
+GitHub's runs API sometimes answers, for a while, with no runs at all for a repository that has
+them. A GitHub check that has listed runs for its repository, branch and workflow holds such an
+empty list as Watch holds a failure while it is offline: for up to an hour of its runs, and
+without a probe, since GitHub answered. If the list stays empty past that, the check says so, as
+in "GitHub listed no runs for main in owner/repo, though it had them before", or "for refresh.yml
+on owner/repo" when it reads one workflow on any branch. "No finished runs yet" stays for a list
+with nothing finished in it, and an edit to another branch or workflow starts the check's memory
+over.
+
 ## Development
 
 ```sh

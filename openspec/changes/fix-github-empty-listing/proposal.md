@@ -36,4 +36,5 @@ None.
 
 `src/server/checks/github.ts`, `src/server/checks/types.ts`, `src/server/runner.ts`,
 `src/server/connectivity.ts` and `src/server/store.ts`, with tests in `src/server/checks.test.ts`
-and `src/server/runner.test.ts`. No migration and no new package.
+and `src/server/runner.test.ts`. No migration and no new package. For release 0.5.1, with a
+paragraph in `README.md`.

@@ -21,3 +21,10 @@
       and again at 16:40 with no change event, one kept passing, and one listed its runs and sent a
       recovery alert, as the old code had left it at "No finished runs yet". A fifth repository's
       pending dip cleared. Asked directly at 16:41, GitHub listed the runs of all four.
+
+## 3. Release
+
+- [ ] 3.1 Release 0.5.1 to npm, `package.json` and `server.json`, with the README saying how Watch
+      holds GitHub's empty lists, after one review round at high, and move the MCP Registry entry
+      to it.
+- [ ] 3.2 A clean install of the published package starts, and the registry lists 0.5.1 as latest.
