@@ -24,7 +24,11 @@
 
 ## 3. Release
 
-- [ ] 3.1 Release 0.5.1 to npm, `package.json` and `server.json`, with the README saying how Watch
+- [x] 3.1 Release 0.5.1 to npm, `package.json` and `server.json`, with the README saying how Watch
       holds GitHub's empty lists, after one review round at high, and move the MCP Registry entry
-      to it.
-- [ ] 3.2 A clean install of the published package starts, and the registry lists 0.5.1 as latest.
+      to it. Published on 23 October at `9d5eb2d`, after a round that found 6 issues in the
+      wording, 5 fixed: npm's latest is 0.5.1, and the registry took `ai.lfglabs/t3-watch` 0.5.1.
+- [x] 3.2 A clean install of the published package starts, and the registry lists 0.5.1 as latest.
+      Installed from npm into an empty folder, it carries the hold, and its demo started, answered
+      on 127.0.0.1 and stopped cleanly; at 04:02 UTC the registry's search showed
+      `ai.lfglabs/t3-watch` 0.5.1 as latest.
