@@ -114,6 +114,24 @@ Things to ask:
   pass; Watch runs it again within a minute of the first, so one dropped request wakes nobody. A
   recovery counts at once.
 
+## Slack alerts
+
+In Details, Alerts, paste your own Slack incoming-webhook URL into the password field and press
+**Save Slack webhook**. Watch encrypts it with the same installation key as vendor keys, never
+shows it again, and never hands it to an agent. **Send Slack test** checks that the channel
+accepts messages. Replace the URL there, or **Disconnect Slack** to stop sending. The demo takes
+no real Slack URL.
+
+[Create an incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
+in your Slack app and choose its channel. Slack and GovSlack are supported. Slack needs no T3
+Code account, and T3 thread alerts keep working alongside it. Each destination has its own
+delivery queue. New or replaced destinations start with future changes, not old events.
+
+Watch sends one Slack change at a time, at least a second apart. Failed sends retry on the
+service's minute timer, honor Slack's Retry-After on HTTP 429, and stop after twenty attempts.
+Details shows the latest test and delivery result. A Slack notification reports the change;
+automatic investigation still needs the T3 thread webhook.
+
 ## When Watch's own connection drops
 
 When a check that needs the internet stops passing, Watch first asks whether it can reach the

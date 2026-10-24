@@ -1,18 +1,18 @@
 ## 1. Site
 
-- [ ] 1.1 `site/`, `scripts/build-site.ts`, `package.json`: static page, demo, installation,
+- [x] 1.1 `site/`, `scripts/build-site.ts`, `package.json`: static page, demo, installation,
       favicon, Open Graph image, security.txt and reproducible site build.
-- [ ] 1.2 `docs/launch/site.md`, `README.md`: deployment and public site links.
-- [ ] 1.3 Verify the page in desktop and mobile browsers, publish to appin60 Cloudflare Pages,
+- [x] 1.2 `docs/launch/site.md`, `README.md`: deployment and public site links.
+- [x] 1.3 Verify the page in desktop and mobile browsers, publish to appin60 Cloudflare Pages,
       add only t3-watch.lfglabs.ai DNS, and verify HTTPS and assets. Report item 1 to HQ.
 
 ## 2. Slack
 
-- [ ] 2.1 `src/server/`: encrypted Slack webhook settings, browser-only writes, independent
+- [x] 2.1 `src/server/`: encrypted Slack webhook settings, browser-only writes, independent
       delivery, retry bookkeeping and test results, with tests for errors and secret privacy.
-- [ ] 2.2 `src/web/Alerts.tsx`, `src/web/client.ts`, `src/web/logic.ts`: password input,
+- [x] 2.2 `src/web/Alerts.tsx`, `src/web/client.ts`, `src/web/logic.ts`: password input,
       save, disconnect, test and results. Demo accepts no secrets. Verify in a browser.
-- [ ] 2.3 `README.md`, `site/index.html`: Slack instructions and capabilities. Deploy the
+- [x] 2.3 `README.md`, `site/index.html`: Slack instructions and capabilities. Deploy the
       updated site and report item 2 to HQ.
 
 ## 3. Vendor descriptions
@@ -32,3 +32,16 @@
 - [ ] 4.4 Verify npm and registry 0.6.0, update Leviathan's live service, confirm watch_status
       answers and existing alerts remain configured. Record evidence in this file and report
       item 4 to HQ. Stop cleanly if the weekly budget reaches 70 percent.
+
+Site evidence, 24 October: main a74c519, Cloudflare Pages project t3-watch and the one
+authorized CNAME live. Chrome verified HTTPS and all assets at 200, video playback at
+60.13 seconds, exact clipboard commands and no overflow at 360, 390, 720, 1280 and 1440 pixels.
+259 tests, both typechecks, strict validation and gitleaks passed. HQ received item 1.
+
+Slack evidence, 24 October: 269 tests pass, with ten new tests covering encrypted storage,
+reopen, URL restrictions, separate T3 and Slack queues, twenty-attempt limit, redirects,
+Retry-After, obsolete results, markup, browser authorization, demo refusal and MCP privacy.
+Typechecks and all builds pass. A disposable Watch in Chrome passed masked save, input clearing,
+a mocked Slack test and disconnect at desktop and phone sizes. No real Slack message was sent.
+A narrow wrapping fix in src/web/ui.tsx closed the check actions' existing mobile overflow.
+The live site explicitly labels Slack as coming in 0.6.0 until the npm release.

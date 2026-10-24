@@ -33,5 +33,5 @@ more GET-only vendor descriptions and release 0.6.0 on 24 October.
 ## Impact
 
 `site/`, `scripts/build-site.ts`, `docs/launch/`, `README.md`, `catalog/`, `src/server/`,
-`src/web/Alerts.tsx`, `src/web/client.ts`, `src/web/logic.ts`, `package.json`, `server.json`
+`src/web/ui.tsx`, `src/web/Alerts.tsx`, `src/web/app-entry.tsx`, `src/web/client.ts`, `src/web/logic.test.ts`, `package.json`, `server.json`
 and this change's artifacts. No new runtime dependencies or hosted Watch service.

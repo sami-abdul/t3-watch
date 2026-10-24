@@ -63,6 +63,8 @@ const mcpClient: WatchClient = {
   roots: null,
   saveRoots: null,
   makeAlertSecret: null,
+  saveSlack: null,
+  testSlack: null,
   testAlert: async () => (await call("watch_test_alert")).structuredContent as unknown as AlertResult,
   ask: async (text) => {
     await app.sendMessage({ role: "user", content: [{ type: "text", text }] });

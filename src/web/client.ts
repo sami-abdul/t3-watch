@@ -67,6 +67,9 @@ export interface WatchClient {
   readonly makeAlertSecret: (() => Promise<string>) | null;
   /** Sends a signed test alert to the webhook and returns how it answered. */
   readonly testAlert: () => Promise<AlertResult>;
+  /** Incoming-webhook URLs are pasted only on the page, never inside a chat. */
+  readonly saveSlack: ((url: string | null) => Promise<void>) | null;
+  readonly testSlack: (() => Promise<AlertResult>) | null;
   /** Hands a question to the Watch thread. Returns what the person should know. */
   readonly ask: (text: string) => Promise<string>;
   readonly openPage: (() => void) | null;
@@ -124,6 +127,8 @@ export const httpClient: WatchClient = {
   },
   makeAlertSecret: async () => (await post<{ secret: string }>("/api/alerts/secret")).secret,
   testAlert: () => post<AlertResult>("/api/alerts/test"),
+  saveSlack: async (url) => { await post("/api/slack", { url }); },
+  testSlack: () => post<AlertResult>("/api/slack/test"),
   ask: async (text) => {
     try {
       await navigator.clipboard.writeText(text);

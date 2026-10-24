@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { WatchClient, WatchState } from "./client.ts";
 import { typeClass } from "~/fluid/lib/type-scale";
 import { Button } from "~/fluid/ui/button";
+import { InputField, InputGroup } from "~/fluid/ui/input-group";
 import { cn } from "~/lib/utils";
 import type { AlertResult } from "../server/alerts.ts";
 import { ago, alertSteps, needsHandover, type StepState } from "./logic.ts";
@@ -209,6 +210,37 @@ export function AlertsPanel({
         </ol>
         {error !== null ? <Muted className="text-destructive">{error}</Muted> : null}
       </div>
+      <SlackPanel client={client} state={state} refresh={refresh} />
     </Section>
   );
+}
+
+function SlackPanel({ client, state, refresh }: { readonly client: WatchClient; readonly state: WatchState; readonly refresh: () => void }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const slack = state.slack;
+  const caption = cn("text-muted-foreground", typeClass("caption"));
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true); setError(null); setMessage(null);
+    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); refresh(); }
+  };
+  return <div className="mt-6 space-y-3 border-t border-border pt-5">
+    <h3 className={typeClass("body")}>Slack alerts</h3>
+    <p className={caption}>{slack.on ? "Connected. Changes also go to the channel chosen in your Slack app." : "Connect a Slack incoming webhook to receive changes in a channel. T3 Code is not required."}</p>
+    {client.saveSlack === null ? <div className="space-y-2"><p className={caption}>Paste the webhook on the Watch page. Its address is a secret and never belongs in chat.</p>{client.openPage !== null ? <Button size="compact" variant="secondary" onClick={client.openPage}>Open the page</Button> : null}</div> : <>
+      <InputGroup size="compact"><InputField index={0} label={slack.on ? "Replacement Slack webhook URL" : "Slack webhook URL"} type="password" autoComplete="off" value={value} onChange={setValue} disabled={busy} /></InputGroup>
+      <p className={caption}>The URL stays encrypted on this machine. Watch never shows it again. <a className="underline" href="https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/" target="_blank" rel="noreferrer">Create an incoming webhook</a> in your Slack app, then paste it here.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="compact" disabled={busy || value.trim() === ""} onClick={() => run(async () => { await client.saveSlack!(value); setValue(""); setMessage("Slack saved. Send a test to check the channel."); })}>{slack.on ? "Replace Slack webhook" : "Save Slack webhook"}</Button>
+        {slack.on ? <><Button size="compact" variant="secondary" disabled={busy} onClick={() => run(async () => { const result = await client.testSlack!(); setMessage(result.message); })}>Send Slack test</Button><Button size="compact" variant="ghost" disabled={busy} onClick={() => run(async () => { await client.saveSlack!(null); setValue(""); setMessage("Slack disconnected."); })}>Disconnect Slack</Button></> : null}
+      </div>
+    </>}
+    {slack.lastTest !== null ? <p className={cn(typeClass("caption"), slack.lastTest.ok ? "text-muted-foreground" : "text-destructive")}>Last Slack test {ago(slack.lastTest.at, new Date(state.generatedAt))}: {slack.lastTest.message}</p> : null}
+    {slack.lastDelivery !== null ? <p className={cn(typeClass("caption"), slack.lastDelivery.ok ? "text-muted-foreground" : "text-destructive")}>Last Slack alert {ago(slack.lastDelivery.at, new Date(state.generatedAt))}: {slack.lastDelivery.message}</p> : null}
+    {message !== null ? <p className={caption} role="status">{message}</p> : null}
+    {error !== null ? <p className={cn(typeClass("caption"), "text-destructive")} role="alert">{error}</p> : null}
+  </div>;
 }

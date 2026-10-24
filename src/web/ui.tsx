@@ -115,7 +115,7 @@ function Row({
             }
           : undefined
       }
-      className={cn("relative z-10 flex items-start gap-3 px-3 py-2.5 outline-none", interactive && "cursor-pointer")}
+      className={cn("relative z-10 flex flex-wrap items-start gap-3 px-3 py-2.5 outline-none", interactive && "cursor-pointer")}
     >
       {tickable ? <Tick checked={checked ?? false} /> : null}
       <span className="min-w-0 flex-1 space-y-0.5">
@@ -143,7 +143,7 @@ function Row({
       ) : null}
       {action ? (
         // Buttons inside a clickable row act on their own.
-        <span className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <span className="ml-auto flex max-w-full shrink-0 flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           {action}
         </span>
       ) : null}
