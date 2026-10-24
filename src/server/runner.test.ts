@@ -519,7 +519,7 @@ describe("runner while Watch is offline", () => {
   it("never holds a heartbeat, which needs no internet", async () => {
     const { watch, net, advance } = setup();
     watch.defineCheck(
-      { id: "hb", serviceId: "s", kind: "heartbeat", intent: "The job pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 60, graceSeconds: 0 }, keyId: null, cadenceSeconds: 60, origin: "user" },
+      { id: "hb", serviceId: "s", kind: "heartbeat", intent: "The job pings", config: { token: "abcdefghijklmnop1234", periodSeconds: 60, graceSeconds: 0 }, keyId: null, cadenceSeconds: 60, origin: "user" }, // gitleaks:allow synthetic heartbeat token
       "on",
     );
     watch.store.addHeartbeat("hb", watch.now(), "success");

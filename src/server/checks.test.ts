@@ -438,7 +438,7 @@ describe("check kinds", () => {
     const watch = testWatch(fake.deps);
     const check = watch.defineCheck({
       ...base, id: "h", serviceId: "s", kind: "heartbeat", intent: "x",
-      config: { token: "abcdefghijklmnop1234", periodSeconds: 3600, graceSeconds: 60 },
+      config: { token: "abcdefghijklmnop1234", periodSeconds: 3600, graceSeconds: 60 }, // gitleaks:allow synthetic heartbeat token
     }, "on");
     expect((await watch.runner.trial(check)).outcome).toBe("unknown");
     watch.store.addHeartbeat("h", watch.now(), "success");

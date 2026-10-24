@@ -9,8 +9,8 @@ import { deleteCheck, editCheck } from "./edits.ts";
 import { findRepositories, manifestPackages, parseAwsConfig, parseEnv, readSources, type Scan } from "./scan.ts";
 import { fakeDeps, jsonResponse } from "./testkit.ts";
 
-const PIPEDRIVE_KEY = "pd-key-1234567890";
-const STRIPE_KEY = "sk_live_abcdefghijkl";
+const PIPEDRIVE_KEY = "pd-key-1234567890"; // gitleaks:allow synthetic vendor fixture
+const STRIPE_KEY = "sk_live_abcdefghijkl"; // gitleaks:allow synthetic vendor fixture
 let root: string;
 
 beforeAll(() => {
