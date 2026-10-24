@@ -27,9 +27,9 @@
 - [x] 4.1 Run `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:site` and
       `openspec validate site-slack-vendors --strict`. Review changes and fix confirmed findings.
 - [x] 4.2 Run gitleaks, commit by explicit path in small steps and push finished work to main.
-- [ ] 4.3 `package.json`, `server.json`: 0.6.0 together. Check the weekly budget before each
+- [x] 4.3 `package.json`, `server.json`: 0.6.0 together. Check the weekly budget before each
       publishing step, publish npm, test a clean install and publish the MCP Registry entry.
-- [ ] 4.4 Verify npm and registry 0.6.0, update Leviathan's live service, confirm watch_status
+- [x] 4.4 Verify npm and registry 0.6.0, update Leviathan's live service, confirm watch_status
       answers and existing alerts remain configured. Record evidence in this file and report
       item 4 to HQ. Stop cleanly if the weekly budget reaches 70 percent.
 
@@ -58,3 +58,14 @@ OpenSpec validation pass at 0.6.0. Manual diff review checked browser authorizat
 redaction, independent queue accounting, stale in-flight results and documented API contracts.
 The npm dry run contains 68 files with Slack server code and all nine new descriptions,
 with no site build, credential file or signing key.
+
+Released 24 October from bb3643a: npm and the MCP Registry both list 0.6.0 as latest.
+A clean npm install contains the Slack module and all 21 descriptions, starts its demo,
+signs a browser in, renders Slack, refuses a sample webhook and stops cleanly. The live
+service on Leviathan was rebuilt and restarted. Its MCP handshake reports 0.6.0 and
+watch_status answers with 21 of 22 checks passing, the same baseline as before. All 22
+remain on; the existing unknown check remains unknown. Hash comparisons confirm the
+configuration and T3 alert settings did not change. The signed live test was accepted
+with HTTP 202. Slack stays unconfigured until a person pastes their own webhook on the page.
+The site now describes released Slack and vendor support. HTTPS, assets and mobile layout
+were checked again. Weekly usage was 25 percent before publication and the live update.
