@@ -1,6 +1,6 @@
 {
   "name": "@lfg-labs/t3-watch",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Monitoring that sets itself up from the projects on your machine, and wakes your coding agent only when something changes.",
   "mcpName": "ai.lfglabs/t3-watch",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "type": "git",
     "url": "git+https://github.com/sami-abdul/t3-watch.git"
   },
-  "homepage": "https://github.com/sami-abdul/t3-watch#readme",
+  "homepage": "https://t3-watch.lfglabs.ai",
   "bugs": {
     "url": "https://github.com/sami-abdul/t3-watch/issues"
   },

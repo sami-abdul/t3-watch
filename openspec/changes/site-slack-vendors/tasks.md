@@ -24,9 +24,9 @@
 
 ## 4. Release and verify
 
-- [ ] 4.1 Run `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:site` and
+- [x] 4.1 Run `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:site` and
       `openspec validate site-slack-vendors --strict`. Review changes and fix confirmed findings.
-- [ ] 4.2 Run gitleaks, commit by explicit path in small steps and push finished work to main.
+- [x] 4.2 Run gitleaks, commit by explicit path in small steps and push finished work to main.
 - [ ] 4.3 `package.json`, `server.json`: 0.6.0 together. Check the weekly budget before each
       publishing step, publish npm, test a clean install and publish the MCP Registry entry.
 - [ ] 4.4 Verify npm and registry 0.6.0, update Leviathan's live service, confirm watch_status
@@ -52,3 +52,9 @@ each public endpoint, authentication and permissions source, with the Twilio and
 64 catalog tests pass, including 55 new cases. An additional scan test discovers all nine
 management keys without reading project credentials as management tokens. No real vendor key
 was used.
+
+Release candidate verification, 24 October: 325 tests, typechecks, all builds and strict
+OpenSpec validation pass at 0.6.0. Manual diff review checked browser authorization, secret
+redaction, independent queue accounting, stale in-flight results and documented API contracts.
+The npm dry run contains 68 files with Slack server code and all nine new descriptions,
+with no site build, credential file or signing key.
