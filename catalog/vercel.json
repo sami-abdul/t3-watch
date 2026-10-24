@@ -1,0 +1,38 @@
+{
+  "id": "vercel",
+  "label": "Vercel",
+  "detect": {
+    "npm": [
+      "vercel",
+      "@vercel/sdk"
+    ],
+    "python": [],
+    "envPrefix": "VERCEL_"
+  },
+  "key": {
+    "envNames": [
+      "VERCEL_TOKEN",
+      "VERCEL_API_TOKEN"
+    ],
+    "keyUrl": "https://vercel.com/account/tokens",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.vercel.com"
+  },
+  "keyCheck": {
+    "path": "/v2/user",
+    "account": "user.id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Vercel key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

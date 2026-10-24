@@ -13,7 +13,8 @@ more GET-only vendor descriptions and release 0.6.0 on 24 October.
   the existing keyring, never return it through the state or MCP, and deliver change alerts and
   test messages independently of T3 alerts. Keep existing T3 settings and delivery working.
 - Add GET-only catalog descriptions for Vercel, Cloudflare, Neon, Supabase, Render, Twilio,
-  SendGrid, Resend and Linear where the current engine can prove a key works. Check endpoints
+  SendGrid and Resend, plus GitLab and DigitalOcean. Twilio needs paired credentials and Linear
+  documents GraphQL POST; both remain unsupported. Check endpoints
   and permissions against vendor documentation, and document any incompatible vendor.
 - Publish 0.6.0 to npm and the MCP Registry, then update Leviathan's live service and confirm
   watch_status and existing alert settings. Read the newest session's last rate_limits event

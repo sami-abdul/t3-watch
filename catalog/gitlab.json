@@ -1,0 +1,41 @@
+{
+  "id": "gitlab",
+  "label": "GitLab",
+  "detect": {
+    "npm": [
+      "@gitbeaker/rest",
+      "@gitbeaker/core"
+    ],
+    "python": [
+      "python-gitlab"
+    ],
+    "envPrefix": "GITLAB_"
+  },
+  "key": {
+    "envNames": [
+      "GITLAB_TOKEN",
+      "GITLAB_ACCESS_TOKEN"
+    ],
+    "keyUrl": "https://gitlab.com/-/user_settings/personal_access_tokens",
+    "auth": {
+      "type": "header",
+      "name": "PRIVATE-TOKEN"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://gitlab.com"
+  },
+  "keyCheck": {
+    "path": "/api/v4/user",
+    "account": "id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The GitLab key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

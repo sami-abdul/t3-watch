@@ -1,0 +1,37 @@
+{
+  "id": "supabase",
+  "label": "Supabase",
+  "detect": {
+    "npm": [
+      "@supabase/supabase-js"
+    ],
+    "python": [
+      "supabase"
+    ],
+    "envPrefix": "SUPABASE_"
+  },
+  "key": {
+    "envNames": [
+      "SUPABASE_ACCESS_TOKEN"
+    ],
+    "keyUrl": "https://supabase.com/dashboard/account/tokens",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.supabase.com"
+  },
+  "keyCheck": {
+    "path": "/v1/projects"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Supabase key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

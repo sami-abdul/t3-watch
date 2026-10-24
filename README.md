@@ -166,7 +166,11 @@ to offer. Adding a vendor is a file, not a release. Watch only sends GET request
 origin a description names.
 
 Shipped: Stripe, Pipedrive, Missive, Asana, Airtable, Jotform, Calendly, Vimeo, Sentry, OpenAI,
-Anthropic. Xero is recognised, but sign-in vendors aren't supported yet.
+Anthropic, Vercel, Cloudflare, Neon, Supabase, Render, SendGrid, Resend, GitLab.com and
+DigitalOcean. These new descriptions verify API access, not deployment health or email delivery.
+[Endpoints, required permissions and limits](docs/launch/vendor-sources.md) explain which key to
+use, including Resend's full-access requirement and why Twilio and Linear are not supported yet.
+Xero is recognised, but sign-in vendors aren't supported yet.
 
 Check kinds that need no vendor file: `http`, `github` (through `gh`; for a scheduled workflow, name
 it in `workflow` and add `maxAgeSeconds`, so a schedule GitHub skipped or disabled fails instead of

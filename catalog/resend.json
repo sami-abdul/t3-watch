@@ -1,0 +1,37 @@
+{
+  "id": "resend",
+  "label": "Resend",
+  "detect": {
+    "npm": [
+      "resend"
+    ],
+    "python": [
+      "resend"
+    ],
+    "envPrefix": "RESEND_"
+  },
+  "key": {
+    "envNames": [
+      "RESEND_API_KEY"
+    ],
+    "keyUrl": "https://resend.com/api-keys",
+    "auth": {
+      "type": "bearer"
+    },
+    "canWrite": ".+"
+  },
+  "api": {
+    "origin": "https://api.resend.com"
+  },
+  "keyCheck": {
+    "path": "/domains"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Resend key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

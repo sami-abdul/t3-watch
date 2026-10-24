@@ -1,0 +1,37 @@
+{
+  "id": "sendgrid",
+  "label": "SendGrid",
+  "detect": {
+    "npm": [
+      "@sendgrid/mail",
+      "@sendgrid/client"
+    ],
+    "python": [
+      "sendgrid"
+    ],
+    "envPrefix": "SENDGRID_"
+  },
+  "key": {
+    "envNames": [
+      "SENDGRID_API_KEY"
+    ],
+    "keyUrl": "https://app.sendgrid.com/settings/api_keys",
+    "auth": {
+      "type": "bearer"
+    }
+  },
+  "api": {
+    "origin": "https://api.sendgrid.com"
+  },
+  "keyCheck": {
+    "path": "/v3/scopes"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The SendGrid key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

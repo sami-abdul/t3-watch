@@ -1,0 +1,35 @@
+{
+  "id": "neon",
+  "label": "Neon",
+  "detect": {
+    "npm": [
+      "@neondatabase/serverless",
+      "@neondatabase/api-client"
+    ],
+    "python": [],
+    "envPrefix": "NEON_"
+  },
+  "key": {
+    "envNames": [
+      "NEON_API_KEY"
+    ],
+    "keyUrl": "https://console.neon.tech/",
+    "auth": {
+      "type": "bearer"
+    }
+  },
+  "api": {
+    "origin": "https://console.neon.tech"
+  },
+  "keyCheck": {
+    "path": "/api/v2/users/me/organizations"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Neon key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

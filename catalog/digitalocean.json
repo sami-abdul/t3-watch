@@ -1,0 +1,38 @@
+{
+  "id": "digitalocean",
+  "label": "DigitalOcean",
+  "detect": {
+    "npm": [],
+    "python": [
+      "pydo",
+      "python-digitalocean"
+    ],
+    "envPrefix": "DIGITALOCEAN_"
+  },
+  "key": {
+    "envNames": [
+      "DIGITALOCEAN_TOKEN",
+      "DIGITALOCEAN_ACCESS_TOKEN"
+    ],
+    "keyUrl": "https://cloud.digitalocean.com/account/api/tokens",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.digitalocean.com"
+  },
+  "keyCheck": {
+    "path": "/v2/account",
+    "account": "account.uuid"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The DigitalOcean key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

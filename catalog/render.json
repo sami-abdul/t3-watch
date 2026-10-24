@@ -1,0 +1,37 @@
+{
+  "id": "render",
+  "label": "Render",
+  "detect": {
+    "npm": [],
+    "python": [],
+    "envPrefix": "RENDER_"
+  },
+  "key": {
+    "envNames": [
+      "RENDER_API_KEY"
+    ],
+    "keyUrl": "https://dashboard.render.com/u/settings#api-keys",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true,
+    "canWrite": ".+"
+  },
+  "api": {
+    "origin": "https://api.render.com"
+  },
+  "keyCheck": {
+    "path": "/v1/services",
+    "query": {
+      "limit": "1"
+    }
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Render key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

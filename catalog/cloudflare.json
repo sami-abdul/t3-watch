@@ -1,0 +1,41 @@
+{
+  "id": "cloudflare",
+  "label": "Cloudflare",
+  "detect": {
+    "npm": [
+      "wrangler",
+      "cloudflare",
+      "@cloudflare/workers-types"
+    ],
+    "python": [
+      "cloudflare"
+    ],
+    "envPrefix": "CLOUDFLARE_"
+  },
+  "key": {
+    "envNames": [
+      "CLOUDFLARE_API_TOKEN",
+      "CF_API_TOKEN"
+    ],
+    "keyUrl": "https://dash.cloudflare.com/profile/api-tokens",
+    "auth": {
+      "type": "bearer"
+    },
+    "personal": true
+  },
+  "api": {
+    "origin": "https://api.cloudflare.com"
+  },
+  "keyCheck": {
+    "path": "/client/v4/user",
+    "account": "result.id"
+  },
+  "checks": [
+    {
+      "type": "key",
+      "id": "key",
+      "intent": "The Cloudflare key still works"
+    }
+  ],
+  "cadenceSeconds": 3600
+}

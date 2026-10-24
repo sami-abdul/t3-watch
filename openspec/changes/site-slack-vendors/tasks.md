@@ -17,9 +17,9 @@
 
 ## 3. Vendor descriptions
 
-- [ ] 3.1 `catalog/`, `src/server/vendors.test.ts`: GET-only vendors checked against public
+- [x] 3.1 `catalog/`, `src/server/vendors.test.ts`: GET-only vendors checked against public
       docs, with fixtures proving success, denied access and configured key handling.
-- [ ] 3.2 `docs/launch/vendor-sources.md`, `README.md`, `site/index.html`: public source links,
+- [x] 3.2 `docs/launch/vendor-sources.md`, `README.md`, `site/index.html`: public source links,
       minimum permissions, unsupported cases and current coverage. Report item 3 to HQ.
 
 ## 4. Release and verify
@@ -45,3 +45,10 @@ Typechecks and all builds pass. A disposable Watch in Chrome passed masked save,
 a mocked Slack test and disconnect at desktop and phone sizes. No real Slack message was sent.
 A narrow wrapping fix in src/web/ui.tsx closed the check actions' existing mobile overflow.
 The live site explicitly labels Slack as coming in 0.6.0 until the npm release.
+
+Vendor evidence, 24 October: nine JSON descriptions add Vercel, Cloudflare, Neon, Supabase,
+Render, SendGrid, Resend, GitLab.com and DigitalOcean. docs/launch/vendor-sources.md records
+each public endpoint, authentication and permissions source, with the Twilio and Linear limits.
+64 catalog tests pass, including 55 new cases. An additional scan test discovers all nine
+management keys without reading project credentials as management tokens. No real vendor key
+was used.

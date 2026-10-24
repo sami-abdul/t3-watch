@@ -345,3 +345,26 @@ describe("scan", () => {
     expect(watch.store.check("vendor:stripe:key")!.state).toBe("paused");
   });
 });
+
+it("discovers the nine new vendors and verifies only their management credentials", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "watch-vendor-discovery-"));
+  const entries = [
+    ["vercel", "VERCEL_TOKEN"], ["cloudflare", "CLOUDFLARE_API_TOKEN"], ["neon", "NEON_API_KEY"],
+    ["supabase", "SUPABASE_ACCESS_TOKEN"], ["render", "RENDER_API_KEY"], ["sendgrid", "SENDGRID_API_KEY"],
+    ["resend", "RESEND_API_KEY"], ["gitlab", "GITLAB_TOKEN"], ["digitalocean", "DIGITALOCEAN_TOKEN"],
+  ];
+  const fake = fakeDeps({ fetch: () => jsonResponse(200, {}) });
+  const watch = makeWatch({ home: null, dbFile: ":memory:", deps: fake.deps, roots: () => [folder], reads: () => ({ github: false, aws: false, envFiles: true }) });
+  try {
+    mkdirSync(join(folder, ".git"));
+    writeFileSync(join(folder, ".env"), entries.map(([, env]) => `${env}=synthetic-scan-only`).join("\n") + "\nSUPABASE_SERVICE_ROLE_KEY=synthetic-project-only\nDATABASE_URL=synthetic-db-only\n");
+    const scan = await watch.scanner.start();
+    expect(new Set(watch.store.keys().map(k => k.vendor))).toEqual(new Set(entries.map(([id]) => id)));
+    expect(scan.suggestions).toHaveLength(entries.length);
+    for (const suggestion of scan.suggestions) {
+      expect(watch.requireCheck(suggestion.checkId).kind).toBe("vendor");
+      expect(suggestion.outcome).toBe("pass");
+    }
+    expect(JSON.stringify(scan)).not.toMatch(/synthetic-scan-only|synthetic-project-only|synthetic-db-only/);
+  } finally { watch.store.close(); rmSync(folder, { recursive: true, force: true }); }
+});
