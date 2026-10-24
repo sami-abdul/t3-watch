@@ -1,0 +1,4 @@
+Contact: mailto:contact@lfglabs.ai
+Expires: 2027-10-24T00:00:00Z
+Preferred-Languages: en
+Canonical: https://t3-watch.lfglabs.ai/.well-known/security.txt

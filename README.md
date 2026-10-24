@@ -19,6 +19,8 @@ plain code on its own clock, so they spend no model tokens.
 The demo in 60 seconds, recorded from `npx @lfg-labs/t3-watch demo` with its sample data. Click it
 for the sharper [MP4](docs/demo.mp4), which GitHub hands over as a download.
 
+[Website](https://t3-watch.lfglabs.ai) · [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.lfglabs%2Ft3-watch)
+
 ## Try it first
 
 ```sh
