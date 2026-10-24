@@ -10,6 +10,7 @@ import { PAUSED_BY_CHOICE } from "./edits.ts";
 import { fromPage, hasToken, requirePage, type Route, readJson, sendJson } from "./http.ts";
 import { makeMcpServer } from "./mcp.ts";
 import { readSources } from "./scan.ts";
+import { deliverSlack, setSlack, testSlack } from "./slack.ts";
 
 /** Routes and background work that build on the core service: settings, drafts, MCP, alerts. */
 export const extendServer = (options: {
@@ -128,6 +129,14 @@ export const extendServer = (options: {
     return true;
   };
 
+  const slack: Route = async (request, response, url) => {
+    if (!["/api/slack", "/api/slack/test"].includes(url.pathname) || request.method !== "POST") return false;
+    requirePage(request, watch, watch.deps.now(), options.config().publicUrl, "Configure and test Slack on the Watch page");
+    const result = url.pathname === "/api/slack/test" ? await testSlack(watch) : setSlack(watch, (await readJson(request)).url);
+    sendJson(response, 200, result);
+    return true;
+  };
+
   // Stateless MCP: a fresh server per request, behind the same token as the API.
   const mcp: Route = async (request, response, url) => {
     if (url.pathname !== "/mcp") return false;
@@ -151,7 +160,7 @@ export const extendServer = (options: {
   const send = () => {
     if (sending) return;
     sending = true;
-    void deliverAlerts(watch, page())
+    void Promise.all([deliverAlerts(watch, page()), deliverSlack(watch, page())])
       .catch((error: unknown) => console.error("t3-watch could not send alerts", error))
       .finally(() => {
         sending = false;
@@ -160,7 +169,7 @@ export const extendServer = (options: {
   let unsubscribe: (() => void) | null = null;
 
   return {
-    routes: [settings, setup, drafts, alertSecret, alertTest, mcp] as ReadonlyArray<Route>,
+    routes: [settings, setup, drafts, alertSecret, alertTest, slack, mcp] as ReadonlyArray<Route>,
     publicRoutes: [] as ReadonlyArray<Route>,
     start: () => {
       unsubscribe = watch.onEvent(send) as () => void;

@@ -20,6 +20,9 @@ export const openKeyring = (home: string | null, store: Store) => {
     return Buffer.concat([decipher.update(body!), decipher.final()]).toString("utf8");
   };
   return {
+    /** Installation secrets that have no vendor key record, such as a Slack webhook URL. */
+    encrypt: seal,
+    decrypt: open,
     add: (record: Omit<KeyRecord, "last4" | "removedAt">, value: string): KeyRecord => {
       const key: KeyRecord = { ...record, last4: value.slice(-4), removedAt: null };
       store.insertKey(key, seal(value));

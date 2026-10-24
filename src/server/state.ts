@@ -1,4 +1,5 @@
 import { alertHost, alertSettings, lastAlertDelivery, lastAlertTest } from "./alerts.ts";
+import { slackState } from "./slack.ts";
 import type { Watch } from "./app.ts";
 import type { Scan } from "./scan.ts";
 import { HELD_NOTICE, PROBES_DISAGREE_NOTICE, SLOW_NOTICE } from "./notices.ts";
@@ -102,6 +103,7 @@ export const readState = (watch: Watch) => {
         lastDelivery: lastAlertDelivery(watch),
       };
     })(),
+    slack: slackState(watch),
     setup: {
       scan: (() => {
         const scan = watch.store.getKv<Scan | null>("scan", null);

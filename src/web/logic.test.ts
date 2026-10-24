@@ -40,6 +40,7 @@ const check = (over: Partial<CheckView>): CheckView => ({
   createdAt: "", updatedAt: "", serviceLabel: "S", serviceProduct: null, note: null, target: "GET https://x.test/", cadence: "every 1 min", ...over,
 });
 const state = (over: Partial<WatchState>): WatchState => ({
+  slack: { on: false, lastTest: null, lastDelivery: null },
   generatedAt: "2026-10-15T10:00:00.000Z", services: [], checks: [], keys: [], events: [], notes: [], vendorDrafts: [],
   alerts: { on: false, host: null, signed: false, lastTest: null, lastDelivery: null }, setup: { scan: null, status: { running: false, step: null, error: null } }, link: { offlineSince: null, probesDisagree: false, slowSince: null }, vendors: [], ...over,
 });

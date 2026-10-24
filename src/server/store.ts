@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS keys (
   id TEXT PRIMARY KEY, vendor TEXT NOT NULL, label TEXT NOT NULL, source TEXT NOT NULL,
   source_key TEXT, last4 TEXT NOT NULL, account TEXT, ciphertext TEXT NOT NULL,
   created_at TEXT NOT NULL, removed_at TEXT);
+CREATE TABLE IF NOT EXISTS slack_deliveries (
+  event_id INTEGER PRIMARY KEY, delivered_at TEXT, attempts INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT, check_id TEXT, at TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS vendor_drafts (
@@ -519,6 +521,20 @@ export const openStore = (file: string) => {
     /** Events that happened before alerts were set up are not sent later. */
     dropPendingEvents: (at: string) =>
       exec("UPDATE events SET delivered_at = ? WHERE delivered_at IS NULL", at),
+
+    /** Slack has its own queue, so delivery to one destination never clears the other's. */
+    pendingSlackEvents: (afterId: number) => all(
+      `SELECT events.*, COALESCE(slack_deliveries.attempts, 0) AS attempts
+       FROM events LEFT JOIN slack_deliveries ON slack_deliveries.event_id = events.id
+       LEFT JOIN checks ON checks.id = events.check_id
+       WHERE events.id > ? AND slack_deliveries.delivered_at IS NULL
+       AND (checks.state IS NULL OR checks.state != 'deleted') ORDER BY events.id LIMIT 1`, afterId,
+    ).map(toEvent),
+    markSlackEvent: (id: number, deliveredAt: string | null) => exec(
+      `INSERT INTO slack_deliveries (event_id, delivered_at, attempts) VALUES (?, ?, 1)
+       ON CONFLICT(event_id) DO UPDATE SET delivered_at = excluded.delivered_at,
+       attempts = slack_deliveries.attempts + 1`, id, deliveredAt,
+    ),
 
 
     keys: () =>

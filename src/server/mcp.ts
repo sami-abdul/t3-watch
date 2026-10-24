@@ -19,10 +19,13 @@ import { homeText, readState, withTargets } from "./state.ts";
 import { pingPath, publicCheck } from "./targets.ts";
 import { packageVersion } from "./version.ts";
 import { VERSION_MARK } from "./version-mark.ts";
+import { slackState } from "./slack.ts";
 
 export const HOME_URI = "ui://t3-watch/home";
 
 const INSTRUCTIONS = `t3-watch watches the systems this developer runs: CI, cloud accounts, API-key vendors, URLs and scheduled jobs. Checks are deterministic and run on Watch's own clock; you never run them on a timer yourself.
+
+Slack incoming-webhook URLs are secrets. Direct the person to Details, Alerts on the Watch page to paste, replace, disconnect or test one. Never ask for one in chat or pass it through a tool. Slack alerts work independently of the T3 thread webhook below.
 
 Roles: the page is for knowing and deciding (turn on, pause, edit, delete, add keys). You are for understanding and authoring: explain why something broke, suggest what to do, and draft new checks.
 
@@ -342,7 +345,9 @@ export const makeMcpServer = (
     { description: "Where change events go, if anywhere.", annotations: readOnly },
     async () => {
       const settings = alertSettings(watch);
-      if (settings.url === null) return text("Alerts are off.");
+      const slack = slackState(watch);
+      const slackSummary = slack.on ? ` Slack alerts are connected.${slack.lastDelivery === null ? "" : ` ${slack.lastDelivery.message}`} Configure or test Slack on the Watch page.` : "";
+      if (settings.url === null) return text((slack.on ? "T3 thread alerts are off." : "Alerts are off.") + slackSummary);
       const last = lastAlertTest(watch);
       const delivery = lastAlertDelivery(watch);
       return text(
@@ -352,7 +357,7 @@ export const makeMcpServer = (
           delivery === null ? null : `Last alert at ${delivery.at}: ${delivery.message}`,
         ]
           .filter(Boolean)
-          .join(" "),
+          .join(" ") + slackSummary,
       );
     },
   );

@@ -17,6 +17,7 @@ import { homeText, readState } from "./state.ts";
 import { startSession } from "./signin.ts";
 import { fakeDeps, jsonResponse, testWatch } from "./testkit.ts";
 import { VERSION_MARK } from "./version-mark.ts";
+import { setSlack } from "./slack.ts";
 
 // A made-up test secret, so the secret scanner may skip it.
 const SIGNING_SECRET = "a-signing-secret-1234"; // gitleaks:allow
@@ -41,6 +42,17 @@ const connect = async (watch: Watch, root = process.cwd()) => {
 const firstText = (result: { content?: Array<{ type: string; text?: string }> }) => result.content?.[0]?.text ?? "";
 
 describe("mcp", () => {
+  it("shows Slack status without exposing its webhook through MCP", async () => {
+    const watch = testWatch(fakeDeps({}).deps);
+    const webhook = new URL(["services", "TTEST", "BTEST", "synthetic-only"].join("/"), "https://hooks.slack.com/").href;
+    setSlack(watch, webhook);
+    const { client } = await connect(watch);
+    for (const name of ["watch_state", "watch_home", "watch_status", "watch_alerts"]) {
+      const result = await client.callTool({ name, arguments: {} });
+      expect(JSON.stringify(result)).not.toContain(webhook);
+      if (name === "watch_alerts") expect(firstText(result as never)).toContain("Slack alerts are connected");
+    }
+  });
   it("lists the tools with read-only hints and the inline view", async () => {
     const { client } = await connect(testWatch(fakeDeps({}).deps));
     const { tools } = await client.listTools();
