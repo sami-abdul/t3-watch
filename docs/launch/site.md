@@ -2,7 +2,10 @@
 
 The static page lives at https://t3-watch.lfglabs.ai on the appin60 Cloudflare Pages account,
 project `t3-watch`. Source is in `site/`. It uses the README's recording and sample Home screenshot
-from `docs/`, with no analytics, external fonts or runtime dependencies.
+from `docs/`, with no external fonts or runtime dependencies. Cloudflare Web Analytics counts
+page loads: Cloudflare injects its beacon, and the CSP allows scripts from
+`https://static.cloudflareinsights.com` and connections to `https://cloudflareinsights.com`.
+It sets no cookies.
 
 ```sh
 pnpm build:site
